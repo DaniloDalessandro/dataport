@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(dir \"c:\\Users\\danilo.ecopel\\Documents\\PROJETOS\\DATAPORT\\backend\")",
+      "Bash(python manage.py:*)",
+      "Bash(venvScripts:*)",
+      "Bash(.venvScriptspython.exe manage.py makemigrations)",
+      "Bash(./venv/Scripts/python.exe manage.py makemigrations)",
+      "Bash(./venv/Scripts/python.exe manage.py migrate)",
+      "Bash(del db.sqlite3)",
+      "Bash(claude mcp add:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}
