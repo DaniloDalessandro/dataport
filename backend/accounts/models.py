@@ -1,6 +1,8 @@
 from django.db import models
 from django.contrib.auth.models import AbstractUser
 from django.conf import settings
+from django.utils.crypto import get_random_string
+import secrets
 
 
 class Company(models.Model):
@@ -8,7 +10,6 @@ class Company(models.Model):
     cnpj = models.CharField('CNPJ', max_length=18, unique=True)
     email = models.EmailField('E-mail', blank=True, null=True)
     phone = models.CharField('Telefone', max_length=20, blank=True, null=True)
-    address = models.CharField('Endereço', max_length=300, blank=True, null=True)
     is_active = models.BooleanField('Ativa', default=True)
     created_at = models.DateTimeField('Criado em', auto_now_add=True)
     updated_at = models.DateTimeField('Atualizado em', auto_now=True)
@@ -48,6 +49,9 @@ class CustomUser(AbstractUser):
     phone = models.CharField('Telefone', max_length=20, blank=True, null=True)
     cpf = models.CharField('CPF', max_length=14, unique=True, blank=True, null=True)
     is_active = models.BooleanField('Ativo', default=True)
+    reset_password_token = models.CharField('Token de Redefinição', max_length=100, blank=True, null=True)
+    reset_password_token_expires = models.DateTimeField('Token Expira em', blank=True, null=True)
+    must_change_password = models.BooleanField('Deve alterar senha', default=False)
     created_at = models.DateTimeField('Criado em', auto_now_add=True)
     updated_at = models.DateTimeField('Atualizado em', auto_now=True)
     created_by = models.ForeignKey(
@@ -74,3 +78,17 @@ class CustomUser(AbstractUser):
 
     def __str__(self):
         return f"{self.get_full_name() or self.username}"
+
+    def generate_reset_token(self):
+        """Gera um token seguro para redefinição de senha"""
+        self.reset_password_token = secrets.token_urlsafe(32)
+        from django.utils import timezone
+        from datetime import timedelta
+        self.reset_password_token_expires = timezone.now() + timedelta(hours=24)
+        self.save()
+        return self.reset_password_token
+
+    @staticmethod
+    def generate_temporary_password():
+        """Gera uma senha temporária segura"""
+        return get_random_string(12)
