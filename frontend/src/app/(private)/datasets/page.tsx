@@ -1,11 +1,20 @@
 "use client"
 
 import { useState } from "react"
-import { Search, Plus, Database, Calendar, FileText } from "lucide-react"
+import { Search, Plus, Database, Calendar, FileText, Upload, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog"
+import { Label } from "@/components/ui/label"
 
 // Mock data - substituir por dados reais da API
 const mockDatasets = [
@@ -61,11 +70,51 @@ const mockDatasets = [
 
 export default function DatasetsPage() {
   const [searchTerm, setSearchTerm] = useState("")
+  const [isDialogOpen, setIsDialogOpen] = useState(false)
+  const [datasetName, setDatasetName] = useState("")
+  const [endpoint, setEndpoint] = useState("")
+  const [selectedFile, setSelectedFile] = useState<File | null>(null)
 
   // Filtrar datasets pelo nome
   const filteredDatasets = mockDatasets.filter((dataset) =>
     dataset.name.toLowerCase().includes(searchTerm.toLowerCase())
   )
+
+  const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    if (file) {
+      const validExtensions = ['.xls', '.xlsx', '.csv']
+      const fileExtension = file.name.substring(file.name.lastIndexOf('.')).toLowerCase()
+
+      if (validExtensions.includes(fileExtension)) {
+        setSelectedFile(file)
+      } else {
+        alert('Por favor, selecione apenas arquivos XLS, XLSX ou CSV')
+        event.target.value = ''
+      }
+    }
+  }
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault()
+    // TODO: Implementar lógica de envio
+    console.log('Nome:', datasetName)
+    console.log('Endpoint:', endpoint)
+    console.log('Arquivo:', selectedFile)
+
+    // Fechar modal e limpar campos
+    setIsDialogOpen(false)
+    setDatasetName("")
+    setEndpoint("")
+    setSelectedFile(null)
+  }
+
+  const handleCancel = () => {
+    setIsDialogOpen(false)
+    setDatasetName("")
+    setEndpoint("")
+    setSelectedFile(null)
+  }
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -116,7 +165,7 @@ export default function DatasetsPage() {
               className="pl-10"
             />
           </div>
-          <Button className="gap-2">
+          <Button className="gap-2" onClick={() => setIsDialogOpen(true)}>
             <Plus className="h-4 w-4" />
             Adicionar Dataset
           </Button>
@@ -135,6 +184,7 @@ export default function DatasetsPage() {
             <Card
               key={dataset.id}
               className="hover:shadow-lg transition-shadow cursor-pointer"
+              onClick={() => window.open(`/datasets/${dataset.id}`, '_blank')}
             >
               <CardHeader>
                 <div className="flex items-start justify-between gap-2">
@@ -185,7 +235,7 @@ export default function DatasetsPage() {
                 : "Comece adicionando um novo dataset"}
             </p>
             {!searchTerm && (
-              <Button className="gap-2">
+              <Button className="gap-2" onClick={() => setIsDialogOpen(true)}>
                 <Plus className="h-4 w-4" />
                 Adicionar Primeiro Dataset
               </Button>
@@ -193,6 +243,108 @@ export default function DatasetsPage() {
           </div>
         )}
       </div>
+
+      {/* Modal de Adicionar Dataset */}
+      <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+        <DialogContent className="sm:max-w-[500px]">
+          <DialogHeader>
+            <DialogTitle>Adicionar Novo Dataset</DialogTitle>
+            <DialogDescription>
+              Preencha os dados do dataset e faça upload do arquivo
+            </DialogDescription>
+          </DialogHeader>
+          <form onSubmit={handleSubmit}>
+            <div className="grid gap-4 py-4">
+              {/* Campo Nome */}
+              <div className="grid gap-2">
+                <Label htmlFor="name">
+                  Nome do Dataset
+                  <span className="text-red-500 ml-1">*</span>
+                </Label>
+                <Input
+                  id="name"
+                  placeholder="Digite o nome do dataset..."
+                  value={datasetName}
+                  onChange={(e) => setDatasetName(e.target.value.slice(0, 80))}
+                  maxLength={80}
+                  required
+                />
+                <p className="text-xs text-gray-500">
+                  {datasetName.length}/80 caracteres
+                </p>
+              </div>
+
+              {/* Campo Endpoint */}
+              <div className="grid gap-2">
+                <Label htmlFor="endpoint">
+                  Endpoint (URL)
+                </Label>
+                <Input
+                  id="endpoint"
+                  type="url"
+                  placeholder="https://exemplo.com/api/dados"
+                  value={endpoint}
+                  onChange={(e) => setEndpoint(e.target.value)}
+                />
+                <p className="text-xs text-gray-500">
+                  URL da API ou fonte de dados (opcional)
+                </p>
+              </div>
+
+              {/* Campo Upload de Arquivo */}
+              <div className="grid gap-2">
+                <Label htmlFor="file">
+                  Arquivo
+                </Label>
+                <div className="flex flex-col gap-2">
+                  <div className="relative">
+                    <Input
+                      id="file"
+                      type="file"
+                      accept=".xls,.xlsx,.csv"
+                      onChange={handleFileChange}
+                      className="cursor-pointer"
+                    />
+                  </div>
+                  <p className="text-xs text-gray-500">
+                    Formatos aceitos: XLS, XLSX, CSV (opcional)
+                  </p>
+                  {selectedFile && (
+                    <div className="flex items-center gap-2 p-2 bg-blue-50 rounded-md">
+                      <Upload className="h-4 w-4 text-blue-600" />
+                      <span className="text-sm text-blue-900 flex-1">
+                        {selectedFile.name}
+                      </span>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setSelectedFile(null)}
+                        className="h-6 w-6 p-0"
+                      >
+                        <X className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={handleCancel}
+              >
+                Cancelar
+              </Button>
+              <Button type="submit">
+                <Plus className="h-4 w-4 mr-2" />
+                Adicionar
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

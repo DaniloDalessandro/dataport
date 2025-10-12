@@ -6,7 +6,7 @@ import {
   Users,
   FileText,
   AlertCircle,
-  Settings,
+  Globe,
   HelpCircle
 } from "lucide-react"
 
@@ -57,9 +57,9 @@ const data = {
       icon: AlertCircle,
     },
     {
-      title: "Configurações",
-      url: "/settings",
-      icon: Settings,
+      title: "Site",
+      url: "/site",
+      icon: Globe,
     },
     {
       title: "Ajuda",
