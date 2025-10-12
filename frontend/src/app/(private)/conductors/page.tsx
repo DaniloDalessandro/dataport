@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect, useCallback } from "react"
-import { useConductors, ConductorFormData, Conductor } from "@/hooks/useConductors"
+import { useDataOperators, DataOperatorFormData, DataOperator } from "@/hooks/useDataOperators"
 import { toast } from "sonner"
 import {
   ConductorDataTable,
@@ -13,23 +13,23 @@ import {
 export default function ConductorsPage() {
   // State for dialogs and editing
   const [isDialogOpen, setIsDialogOpen] = useState(false)
-  const [editingConductor, setEditingConductor] = useState<Conductor | null>(null)
+  const [editingConductor, setEditingConductor] = useState<DataOperator | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [isDeactivateDialogOpen, setIsDeactivateDialogOpen] = useState(false)
-  const [conductorToDeactivate, setConductorToDeactivate] = useState<Conductor | null>(null)
+  const [conductorToDeactivate, setConductorToDeactivate] = useState<DataOperator | null>(null)
 
   // State for server-side pagination and filtering
   const [pagination, setPagination] = useState({ pageIndex: 0, pageSize: 10 });
   const [filters, setFilters] = useState<Record<string, any>>({});
 
   const {
-    conductors,
+    conductors: dataOperators,
     totalCount,
     isLoading,
-    fetchConductors,
-    createConductor,
-    updateConductor,
-  } = useConductors()
+    fetchConductors: fetchDataOperators,
+    createConductor: createDataOperator,
+    updateConductor: updateDataOperator,
+  } = useDataOperators()
 
   // Fetch data when pagination or filters change
   useEffect(() => {
@@ -38,8 +38,8 @@ export default function ConductorsPage() {
       pageSize: pagination.pageSize,
       filters: filters,
     };
-    fetchConductors(fetchParams);
-  }, [pagination, filters, fetchConductors]);
+    fetchDataOperators(fetchParams);
+  }, [pagination, filters, fetchDataOperators]);
 
   const handleRefreshData = useCallback(() => {
     const fetchParams = {
@@ -47,17 +47,17 @@ export default function ConductorsPage() {
       pageSize: pagination.pageSize,
       filters: filters,
     };
-    fetchConductors(fetchParams);
-  }, [pagination, filters, fetchConductors]);
+    fetchDataOperators(fetchParams);
+  }, [pagination, filters, fetchDataOperators]);
 
-  const handleSubmit = async (data: ConductorFormData) => {
+  const handleSubmit = async (data: DataOperatorFormData) => {
     setIsSubmitting(true)
     try {
       if (editingConductor) {
-        await updateConductor(editingConductor.id, data)
+        await updateDataOperator(editingConductor.id, data)
         toast.success("Condutor atualizado com sucesso!")
       } else {
-        await createConductor(data)
+        await createDataOperator(data)
         toast.success("Condutor cadastrado com sucesso!")
       }
       setIsDialogOpen(false)
@@ -70,12 +70,12 @@ export default function ConductorsPage() {
     }
   }
 
-  const handleEdit = (conductor: Conductor) => {
+  const handleEdit = (conductor: DataOperator) => {
     setEditingConductor(conductor)
     setIsDialogOpen(true)
   }
 
-  const handleDelete = (conductor: Conductor) => {
+  const handleDelete = (conductor: DataOperator) => {
     setConductorToDeactivate(conductor)
     setIsDeactivateDialogOpen(true)
   }
@@ -85,7 +85,7 @@ export default function ConductorsPage() {
 
     setIsSubmitting(true)
     try {
-      await updateConductor(conductorToDeactivate.id, { is_active: false })
+      await updateDataOperator(conductorToDeactivate.id, { is_active: false })
       toast.success("Condutor inativado com sucesso!")
       setIsDeactivateDialogOpen(false)
       setConductorToDeactivate(null)
@@ -102,7 +102,7 @@ export default function ConductorsPage() {
     setIsDialogOpen(true)
   }
 
-  const handleViewDetails = (conductor: Conductor) => {
+  const handleViewDetails = (conductor: DataOperator) => {
     if (!conductor || !conductor.id) {
       toast.error('Erro: ID do condutor não encontrado');
       return;
@@ -121,11 +121,11 @@ export default function ConductorsPage() {
           </div>
         </div>
 
-        <ConductorStats conductors={conductors} />
+        <ConductorStats conductors={dataOperators} />
 
         <div className="flex-1 min-h-0">
           <ConductorDataTable
-            conductors={conductors}
+            conductors={dataOperators}
             totalCount={totalCount}
             pagination={pagination}
             onPaginationChange={setPagination}

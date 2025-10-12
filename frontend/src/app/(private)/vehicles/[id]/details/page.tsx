@@ -8,7 +8,7 @@ import { AlertTriangle, Car, Wrench, User } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Vehicle, useVehicles } from "@/hooks/useVehicles";
+import { Vehicle, useVehicles } from "@/hooks/useDatasets";
 
 export default function VehicleDetailsPage() {
   const params = useParams();

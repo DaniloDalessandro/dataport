@@ -7,12 +7,10 @@ import { ptBR } from "date-fns/locale";
 import { AlertTriangle, User, CreditCard, Car } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Conductor, Vehicle } from "@/hooks/useConductors";
-import { useAuthContext } from "@/context/AuthContext";
+import { Conductor, Vehicle } from "@/hooks/useDataOperators";
 
 export default function ConductorDetailsPage() {
   const params = useParams();
-  const { accessToken } = useAuthContext();
   const [conductor, setConductor] = useState<Conductor | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -34,7 +32,8 @@ export default function ConductorDetailsPage() {
           throw new Error(`ID do condutor deve ser um número válido. Recebido: "${params.id}" (limpo: "${cleanId}")`);
         }
 
-        // Check if user is authenticated
+        // Get access token from localStorage
+        const accessToken = localStorage.getItem('access_token');
         if (!accessToken) {
           throw new Error('Token de acesso não encontrado');
         }
@@ -77,10 +76,10 @@ export default function ConductorDetailsPage() {
       }
     };
 
-    if (params.id && accessToken) {
+    if (params.id) {
       fetchConductor();
     }
-  }, [params.id, accessToken]);
+  }, [params.id]);
 
   const isLicenseExpiringSoon = (dateString: string) => {
     try {
