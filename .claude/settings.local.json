@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(curl -X POST http://localhost:8000/api/auth/login -H \"Content-Type: application/json\" -H \"Origin: http://localhost:3000\" -d \"{\"\"email\"\":\"\"admin@dataport.com\"\",\"\"password\"\":\"\"admin123\"\"}\" -i)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

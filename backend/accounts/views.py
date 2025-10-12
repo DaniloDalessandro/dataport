@@ -2,6 +2,9 @@ from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import AllowAny, IsAuthenticated
+from rest_framework.views import APIView
+from rest_framework_simplejwt.views import TokenObtainPairView
+from rest_framework_simplejwt.tokens import RefreshToken
 from django.contrib.auth import get_user_model
 from django.utils import timezone
 from .models import Company
@@ -10,7 +13,8 @@ from .serializers import (
     UserSerializer,
     PasswordResetRequestSerializer,
     PasswordResetConfirmSerializer,
-    ChangePasswordSerializer
+    ChangePasswordSerializer,
+    CustomTokenObtainPairSerializer
 )
 from .services import EmailService
 
@@ -112,3 +116,30 @@ class UserViewSet(viewsets.ModelViewSet):
         """Retorna os dados do usuário autenticado"""
         serializer = self.get_serializer(request.user)
         return Response(serializer.data)
+
+
+class CustomTokenObtainPairView(TokenObtainPairView):
+    """Custom login view with email support"""
+    serializer_class = CustomTokenObtainPairSerializer
+    permission_classes = [AllowAny]
+
+
+class LogoutView(APIView):
+    """Logout view that blacklists the refresh token"""
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        try:
+            refresh_token = request.data.get("refresh")
+            if refresh_token:
+                token = RefreshToken(refresh_token)
+                token.blacklist()
+            return Response(
+                {"message": "Logout realizado com sucesso."},
+                status=status.HTTP_200_OK
+            )
+        except Exception as e:
+            return Response(
+                {"error": "Token inválido ou já utilizado."},
+                status=status.HTTP_400_BAD_REQUEST
+            )

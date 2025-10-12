@@ -1,4 +1,5 @@
 from rest_framework import serializers
+from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from django.contrib.auth import get_user_model
 from .models import Company
 
@@ -73,4 +74,50 @@ class ChangePasswordSerializer(serializers.Serializer):
     def validate(self, data):
         if data['new_password'] != data['confirm_password']:
             raise serializers.ValidationError("As senhas não coincidem.")
+        return data
+
+
+class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
+    """Custom serializer to allow login with email instead of username"""
+    email = serializers.EmailField(required=True)
+    password = serializers.CharField(required=True, write_only=True)
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # Remove username field requirement
+        if 'username' in self.fields:
+            del self.fields['username']
+
+    def validate(self, attrs):
+        # Get email from request
+        email = attrs.get('email')
+        password = attrs.get('password')
+
+        if email and password:
+            try:
+                # Find user by email
+                user = User.objects.get(email=email, is_active=True)
+                # Check password
+                if not user.check_password(password):
+                    raise serializers.ValidationError({'non_field_errors': ['Credenciais inválidas.']})
+
+                # Add username to attrs for parent validation
+                attrs[self.username_field] = user.username
+
+            except User.DoesNotExist:
+                raise serializers.ValidationError({'non_field_errors': ['Credenciais inválidas.']})
+
+        # Call parent validation
+        data = super().validate(attrs)
+
+        # Add user data to response
+        data['user'] = {
+            'id': self.user.id,
+            'email': self.user.email,
+            'first_name': self.user.first_name,
+            'last_name': self.user.last_name,
+            'profile_type': getattr(self.user, 'profile_type', None),
+            'is_superuser': self.user.is_superuser,
+        }
+
         return data
