@@ -286,15 +286,20 @@ class DataImportService:
             cursor.execute(create_table_sql)
 
     @staticmethod
-    def insert_data(table_name: str, data: List[Dict], column_structure: Dict[str, Dict]) -> int:
+    def insert_data(table_name: str, data: List[Dict], column_structure: Dict[str, Dict]) -> Dict[str, int]:
         """
-        Insert data into the created table
-        Returns: number of records inserted
+        Insert data into the created table with duplicate checking
+        Returns: dictionary with statistics {
+            'inserted': number of records inserted,
+            'duplicates': number of duplicates skipped,
+            'errors': number of errors,
+            'total': total records processed
+        }
         """
         safe_table_name = DataImportService.sanitize_column_name(table_name)
 
         if not data:
-            return 0
+            return {'inserted': 0, 'duplicates': 0, 'errors': 0, 'total': 0}
 
         name_mapping = {
             info['original_name']: col_name
@@ -302,6 +307,8 @@ class DataImportService:
         }
 
         records_inserted = 0
+        duplicates_skipped = 0
+        errors = 0
 
         with connection.cursor() as cursor:
             for item in data:
@@ -321,20 +328,51 @@ class DataImportService:
                 columns = list(values_dict.keys())
                 values = [values_dict[col] for col in columns]
 
-                columns_str = ', '.join(columns)
-                placeholders = ', '.join(['%s' for _ in columns])
-                insert_sql = f'INSERT INTO {safe_table_name} ({columns_str}) VALUES ({placeholders})'
+                # Check if record already exists (duplicate detection)
+                where_clauses = []
+                where_values = []
+                for col, val in zip(columns, values):
+                    if val is None:
+                        where_clauses.append(f'{col} IS NULL')
+                    else:
+                        where_clauses.append(f'{col} = %s')
+                        where_values.append(val)
+
+                check_sql = f'SELECT COUNT(*) FROM {safe_table_name} WHERE {" AND ".join(where_clauses)}'
 
                 try:
+                    cursor.execute(check_sql, where_values)
+                    count = cursor.fetchone()[0]
+
+                    if count > 0:
+                        # Record already exists, skip insertion
+                        duplicates_skipped += 1
+                        print(f'Duplicate record skipped (already exists in table)')
+                        continue
+
+                    # Insert new record
+                    columns_str = ', '.join(columns)
+                    placeholders = ', '.join(['%s' for _ in columns])
+                    insert_sql = f'INSERT INTO {safe_table_name} ({columns_str}) VALUES ({placeholders})'
+
                     cursor.execute(insert_sql, values)
                     records_inserted += 1
+
                 except Exception as e:
-                    print(f'Error inserting record: {e}')
-                    print(f'SQL: {insert_sql}')
+                    errors += 1
+                    print(f'Error processing record: {e}')
+                    print(f'SQL: {check_sql if "check_sql" in locals() else insert_sql}')
                     print(f'Values: {values}')
                     continue
 
-        return records_inserted
+        total = records_inserted + duplicates_skipped + errors
+
+        return {
+            'inserted': records_inserted,
+            'duplicates': duplicates_skipped,
+            'errors': errors,
+            'total': total
+        }
 
     @staticmethod
     def import_data(
@@ -377,13 +415,17 @@ class DataImportService:
 
             # Create table and insert data (same for both types)
             DataImportService.create_table(table_name, column_structure)
-            records_inserted = DataImportService.insert_data(table_name, data, column_structure)
+            insert_stats = DataImportService.insert_data(table_name, data, column_structure)
 
             # Update process - keep as active
             process.status = 'active'
-            process.record_count = records_inserted
+            process.record_count = insert_stats['inserted']
             process.column_structure = column_structure
             process.save()
+
+            # Store stats in process for later reference
+            if insert_stats['duplicates'] > 0 or insert_stats['errors'] > 0:
+                print(f"Import completed: {insert_stats['inserted']} inserted, {insert_stats['duplicates']} duplicates skipped, {insert_stats['errors']} errors")
 
             return process
 

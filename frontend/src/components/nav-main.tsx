@@ -29,6 +29,7 @@ export function NavMain({
     icon?: LucideIcon
     isActive?: boolean
     external?: boolean
+    openInNewTab?: boolean
     items?: {
       title: string
       url: string
@@ -87,7 +88,7 @@ export function NavMain({
           ) : (
             <SidebarMenuItem key={item.title}>
               <SidebarMenuButton asChild tooltip={item.title} className="border-0 outline-0 ring-0">
-                {item.external ? (
+                {item.external || item.openInNewTab ? (
                   <a
                     href={item.url}
                     target="_blank"

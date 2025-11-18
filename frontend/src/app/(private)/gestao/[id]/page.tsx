@@ -235,7 +235,29 @@ export default function DatasetDetailsPage() {
       }
 
       if (data.success) {
-        toast.success(data.message || "Dados adicionados com sucesso!")
+        // Show detailed message with statistics if available
+        if (data.statistics) {
+          const stats = data.statistics
+          let detailedMessage = `${stats.inserted} registros adicionados`
+
+          if (stats.duplicates > 0) {
+            detailedMessage += ` | ${stats.duplicates} duplicatas ignoradas`
+          }
+
+          if (stats.errors > 0) {
+            detailedMessage += ` | ${stats.errors} erros`
+          }
+
+          // Use warning toast if there were duplicates
+          if (stats.duplicates > 0) {
+            toast.warning(detailedMessage, { duration: 6000 })
+          } else {
+            toast.success(detailedMessage, { duration: 5000 })
+          }
+        } else {
+          toast.success(data.message || "Dados adicionados com sucesso!")
+        }
+
         // Update process with new data
         setProcess(data.process)
         // Refresh data preview

@@ -57,9 +57,10 @@ const data = {
       icon: AlertCircle,
     },
     {
-      title: "Site",
-      url: "/site",
+      title: "Site Público",
+      url: "/site-publico",
       icon: Globe,
+      openInNewTab: true,
     },
     {
       title: "Ajuda",

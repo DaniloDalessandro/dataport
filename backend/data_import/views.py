@@ -1,13 +1,16 @@
 from rest_framework import status
 from rest_framework.views import APIView
 from rest_framework.response import Response
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.pagination import PageNumberPagination
 from django.views.decorators.csrf import csrf_exempt
 from django.utils.decorators import method_decorator
+from django.http import HttpResponse
 from .models import DataImportProcess
 from .serializers import DataImportRequestSerializer, DataImportProcessSerializer
 from .services import DataImportService
+import csv
+import io
 
 
 class DataImportPagination(PageNumberPagination):
@@ -90,10 +93,13 @@ class ImportDataView(APIView):
             # Return created process
             result_serializer = DataImportProcessSerializer(process)
 
+            # Get insertion statistics if available
+            message = f'Dados importados com sucesso! {process.record_count} registros inseridos.'
+
             return Response(
                 {
                     'success': True,
-                    'message': f'Dados importados com sucesso! {process.record_count} registros inseridos.',
+                    'message': message,
                     'process': result_serializer.data
                 },
                 status=status.HTTP_201_CREATED
@@ -279,25 +285,39 @@ class AppendDataView(APIView):
                 raise ValueError(f'Tipo de importação inválido: {import_type}')
 
             # Insert new data into existing table
-            new_records = DataImportService.insert_data(
+            insert_stats = DataImportService.insert_data(
                 process.table_name,
                 data,
                 process.column_structure
             )
 
-            # Update process record
-            process.record_count += new_records
+            # Update process record with newly inserted records only
+            process.record_count += insert_stats['inserted']
             process.save()
 
-            print(f"✅ {new_records} novos registros adicionados!")
+            print(f"✅ Importação concluída:")
+            print(f"   - Inseridos: {insert_stats['inserted']}")
+            print(f"   - Duplicatas ignoradas: {insert_stats['duplicates']}")
+            print(f"   - Erros: {insert_stats['errors']}")
+            print(f"   - Total processado: {insert_stats['total']}")
 
-            # Return updated process
+            # Return updated process with statistics
             result_serializer = DataImportProcessSerializer(process)
+
+            # Create detailed message
+            message_parts = [f"{insert_stats['inserted']} novos registros adicionados"]
+            if insert_stats['duplicates'] > 0:
+                message_parts.append(f"{insert_stats['duplicates']} duplicatas ignoradas")
+            if insert_stats['errors'] > 0:
+                message_parts.append(f"{insert_stats['errors']} erros")
+
+            message = " | ".join(message_parts)
 
             return Response(
                 {
                     'success': True,
-                    'message': f'{new_records} novos registros adicionados com sucesso!',
+                    'message': message,
+                    'statistics': insert_stats,
                     'process': result_serializer.data
                 },
                 status=status.HTTP_200_OK
@@ -442,5 +462,333 @@ class DataPreviewView(APIView):
         except Exception as e:
             return Response(
                 {'error': f'Erro ao buscar prévia: {str(e)}'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+
+class SearchDataView(APIView):
+    """
+    View para buscar dados em todas as tabelas ativas
+    GET /api/data-import/search/?q=termo
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        """
+        Search data across all active tables
+        """
+        query = request.GET.get('q', '').strip()
+
+        if not query:
+            return Response({
+                'success': False,
+                'error': 'Termo de busca é obrigatório'
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            # Get all active processes
+            active_processes = DataImportProcess.objects.filter(status='active')
+
+            from django.db import connection
+            results = []
+
+            for process in active_processes:
+                safe_table_name = DataImportService.sanitize_column_name(process.table_name)
+                columns = list(process.column_structure.keys())
+
+                if not columns:
+                    continue
+
+                # Build search query for all columns
+                where_clauses = []
+                for col in columns:
+                    where_clauses.append(f"CAST({col} AS TEXT) LIKE %s")
+
+                search_pattern = f'%{query}%'
+                where_params = [search_pattern] * len(columns)
+
+                search_sql = f'''
+                    SELECT {', '.join(columns)}
+                    FROM {safe_table_name}
+                    WHERE {' OR '.join(where_clauses)}
+                    LIMIT 100
+                '''
+
+                try:
+                    with connection.cursor() as cursor:
+                        cursor.execute(search_sql, where_params)
+                        rows = cursor.fetchall()
+
+                        if rows:
+                            table_results = []
+                            for row in rows:
+                                row_dict = {}
+                                for i, col_name in enumerate(columns):
+                                    row_dict[col_name] = row[i]
+                                table_results.append(row_dict)
+
+                            results.append({
+                                'process_id': process.id,
+                                'table_name': process.table_name,
+                                'columns': columns,
+                                'data': table_results,
+                                'count': len(table_results)
+                            })
+
+                except Exception as e:
+                    print(f"Erro ao buscar na tabela {safe_table_name}: {e}")
+                    continue
+
+            return Response({
+                'success': True,
+                'query': query,
+                'results': results,
+                'total_tables': len(results)
+            })
+
+        except Exception as e:
+            return Response(
+                {'error': f'Erro ao buscar dados: {str(e)}'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+
+class DownloadDataView(APIView):
+    """
+    View para baixar dados de uma tabela em CSV
+    GET /api/data-import/processes/<id>/download/
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, pk):
+        """
+        Download table data as CSV
+        """
+        try:
+            process = DataImportProcess.objects.get(pk=pk)
+
+            from django.db import connection
+
+            safe_table_name = DataImportService.sanitize_column_name(process.table_name)
+            columns = list(process.column_structure.keys())
+
+            if not columns:
+                return Response(
+                    {'error': 'Estrutura de colunas não disponível'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            # Query all data from table
+            with connection.cursor() as cursor:
+                columns_str = ', '.join(columns)
+                query = f'SELECT {columns_str} FROM {safe_table_name}'
+
+                cursor.execute(query)
+                rows = cursor.fetchall()
+
+            # Create CSV
+            output = io.StringIO()
+            writer = csv.writer(output)
+
+            # Write header
+            writer.writerow(columns)
+
+            # Write data
+            for row in rows:
+                writer.writerow(row)
+
+            # Create HTTP response
+            response = HttpResponse(output.getvalue(), content_type='text/csv')
+            response['Content-Disposition'] = f'attachment; filename="{process.table_name}.csv"'
+
+            return response
+
+        except DataImportProcess.DoesNotExist:
+            return Response(
+                {'error': 'Processo não encontrado'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        except Exception as e:
+            return Response(
+                {'error': f'Erro ao baixar dados: {str(e)}'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+
+class PublicListDatasetsView(APIView):
+    """
+    Public view to list all active datasets (no authentication required)
+    GET /api/data-import/public-datasets/
+    """
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+        """
+        List all active datasets
+        """
+        try:
+            # Get all active processes
+            active_processes = DataImportProcess.objects.filter(status='active').order_by('-created_at')
+
+            # Serialize the data
+            serializer = DataImportProcessSerializer(active_processes, many=True)
+
+            return Response({
+                'success': True,
+                'count': active_processes.count(),
+                'results': serializer.data
+            })
+        except Exception as e:
+            return Response({
+                'success': False,
+                'error': f'Erro ao listar datasets: {str(e)}'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class PublicSearchDataView(APIView):
+    """
+    Public view to search data across all active tables (no authentication required)
+    GET /api/data-import/public-search/?q=termo
+    """
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+        """
+        Public search across all active tables
+        """
+        query = request.GET.get('q', '').strip()
+
+        if not query:
+            return Response({
+                'success': False,
+                'error': 'Termo de busca é obrigatório'
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            # Get all active processes
+            active_processes = DataImportProcess.objects.filter(status='active')
+
+            from django.db import connection
+            results = []
+
+            for process in active_processes:
+                safe_table_name = DataImportService.sanitize_column_name(process.table_name)
+                columns = list(process.column_structure.keys())
+
+                if not columns:
+                    continue
+
+                # Build search query for all columns
+                where_clauses = []
+                for col in columns:
+                    where_clauses.append(f"CAST({col} AS TEXT) LIKE %s")
+
+                search_pattern = f'%{query}%'
+                where_params = [search_pattern] * len(columns)
+
+                search_sql = f'''
+                    SELECT {', '.join(columns)}
+                    FROM {safe_table_name}
+                    WHERE {' OR '.join(where_clauses)}
+                    LIMIT 100
+                '''
+
+                try:
+                    with connection.cursor() as cursor:
+                        cursor.execute(search_sql, where_params)
+                        rows = cursor.fetchall()
+
+                        if rows:
+                            table_results = []
+                            for row in rows:
+                                row_dict = {}
+                                for i, col_name in enumerate(columns):
+                                    row_dict[col_name] = row[i]
+                                table_results.append(row_dict)
+
+                            results.append({
+                                'process_id': process.id,
+                                'table_name': process.table_name,
+                                'columns': columns,
+                                'data': table_results,
+                                'count': len(table_results)
+                            })
+
+                except Exception as e:
+                    print(f"Erro ao buscar na tabela {safe_table_name}: {e}")
+                    continue
+
+            return Response({
+                'success': True,
+                'query': query,
+                'results': results,
+                'total_tables': len(results)
+            })
+
+        except Exception as e:
+            return Response(
+                {'error': f'Erro ao buscar dados: {str(e)}'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+
+class PublicDownloadDataView(APIView):
+    """
+    Public view to download table data as CSV (no authentication required)
+    GET /api/data-import/public-download/<id>/
+    """
+    permission_classes = [AllowAny]
+
+    def get(self, request, pk):
+        """
+        Download table data as CSV (public access)
+        """
+        try:
+            process = DataImportProcess.objects.get(pk=pk, status='active')
+
+            from django.db import connection
+
+            safe_table_name = DataImportService.sanitize_column_name(process.table_name)
+            columns = list(process.column_structure.keys())
+
+            if not columns:
+                return Response(
+                    {'error': 'Estrutura de colunas não disponível'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            # Query all data from table
+            with connection.cursor() as cursor:
+                columns_str = ', '.join(columns)
+                query = f'SELECT {columns_str} FROM {safe_table_name}'
+
+                cursor.execute(query)
+                rows = cursor.fetchall()
+
+            # Create CSV
+            output = io.StringIO()
+            writer = csv.writer(output)
+
+            # Write header
+            writer.writerow(columns)
+
+            # Write data
+            for row in rows:
+                writer.writerow(row)
+
+            # Create HTTP response
+            response = HttpResponse(output.getvalue(), content_type='text/csv')
+            response['Content-Disposition'] = f'attachment; filename="{process.table_name}.csv"'
+
+            return response
+
+        except DataImportProcess.DoesNotExist:
+            return Response(
+                {'error': 'Dados não encontrados ou não estão públicos'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        except Exception as e:
+            return Response(
+                {'error': f'Erro ao baixar dados: {str(e)}'},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )

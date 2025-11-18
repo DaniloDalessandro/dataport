@@ -119,7 +119,21 @@ export function ImportForm({ onImportSuccess }: ImportFormProps) {
       }
 
       if (data.success) {
-        toast.success(data.message || "Dados importados com sucesso!")
+        // Show detailed message if statistics are available
+        if (data.statistics) {
+          const stats = data.statistics
+          let detailedMessage = `${stats.inserted} registros inseridos`
+          if (stats.duplicates > 0) {
+            detailedMessage += ` | ${stats.duplicates} duplicatas ignoradas`
+          }
+          if (stats.errors > 0) {
+            detailedMessage += ` | ${stats.errors} erros`
+          }
+          toast.success(detailedMessage, { duration: 5000 })
+        } else {
+          toast.success(data.message || "Dados importados com sucesso!")
+        }
+
         // Reset form
         setEndpointUrl("")
         setTableName("")

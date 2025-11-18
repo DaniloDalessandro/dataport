@@ -1,5 +1,9 @@
 from django.urls import path
-from .views import ImportDataView, ListProcessesView, ProcessDetailView, DeleteProcessView, AppendDataView, ToggleStatusView, DataPreviewView
+from .views import (
+    ImportDataView, ListProcessesView, ProcessDetailView, DeleteProcessView,
+    AppendDataView, ToggleStatusView, DataPreviewView, SearchDataView, DownloadDataView,
+    PublicSearchDataView, PublicDownloadDataView, PublicListDatasetsView
+)
 
 app_name = 'data_import'
 
@@ -11,4 +15,10 @@ urlpatterns = [
     path('processes/<int:pk>/append/', AppendDataView.as_view(), name='append-data'),
     path('processes/<int:pk>/toggle-status/', ToggleStatusView.as_view(), name='toggle-status'),
     path('processes/<int:pk>/preview/', DataPreviewView.as_view(), name='data-preview'),
+    path('search/', SearchDataView.as_view(), name='search-data'),
+    path('processes/<int:pk>/download/', DownloadDataView.as_view(), name='download-data'),
+    # Public endpoints (no authentication required)
+    path('public-datasets/', PublicListDatasetsView.as_view(), name='public-list-datasets'),
+    path('public-search/', PublicSearchDataView.as_view(), name='public-search-data'),
+    path('public-download/<int:pk>/', PublicDownloadDataView.as_view(), name='public-download-data'),
 ]
