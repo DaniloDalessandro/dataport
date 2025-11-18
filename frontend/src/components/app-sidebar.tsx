@@ -33,7 +33,7 @@ const data = {
     },
     {
       title: "Gestão de Dados",
-      url: "/datasets",
+      url: "/gestao",
       icon: Database,
     },
     {

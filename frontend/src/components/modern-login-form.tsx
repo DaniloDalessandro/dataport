@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { cn } from "@/lib/utils"
+import { getApiUrl } from "@/lib/config"
 
 interface ModernLoginFormProps {
   className?: string
@@ -30,8 +31,6 @@ export function ModernLoginForm({ className }: ModernLoginFormProps) {
     // Password validation
     if (!password) {
       newErrors.password = "Senha é obrigatória"
-    } else if (password.length < 6) {
-      newErrors.password = "A senha deve ter pelo menos 6 caracteres"
     }
 
     setErrors(newErrors)
@@ -49,7 +48,7 @@ export function ModernLoginForm({ className }: ModernLoginFormProps) {
     setIsLoading(true)
 
     try {
-      const response = await fetch("http://localhost:8000/api/auth/login", {
+      const response = await fetch(getApiUrl("/api/auth/login"), {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

@@ -1,0 +1,24 @@
+/.claude
+
+# Environment variables (protection at root level)
+.env
+.env.local
+.env.*.local
+backend/.env
+frontend/.env.local
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Database
+*.sqlite3
+*.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo

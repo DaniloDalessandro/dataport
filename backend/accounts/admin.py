@@ -1,6 +1,6 @@
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin
-from .models import CustomUser, Company
+from .models import CustomUser, Company, InternalProfile, ExternalProfile
 
 
 @admin.register(Company)
@@ -75,3 +75,19 @@ class CustomUserAdmin(UserAdmin):
             obj.created_by = request.user
         obj.updated_by = request.user
         super().save_model(request, obj, form, change)
+
+
+@admin.register(InternalProfile)
+class InternalProfileAdmin(admin.ModelAdmin):
+    list_display = ['user', 'department', 'position', 'employee_id', 'created_at']
+    list_filter = ['department', 'created_at']
+    search_fields = ['user__username', 'user__email', 'employee_id', 'department', 'position']
+    readonly_fields = ['created_at', 'updated_at']
+
+
+@admin.register(ExternalProfile)
+class ExternalProfileAdmin(admin.ModelAdmin):
+    list_display = ['user', 'company_name', 'external_type', 'cnpj', 'created_at']
+    list_filter = ['external_type', 'created_at']
+    search_fields = ['user__username', 'user__email', 'company_name', 'cnpj']
+    readonly_fields = ['created_at', 'updated_at']

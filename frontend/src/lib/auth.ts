@@ -3,7 +3,9 @@
  * Manages token storage, validation, refresh, and logout operations
  */
 
-const API_BASE_URL = "http://localhost:8000/api"
+import { config } from "./config"
+
+const API_BASE_URL = config.apiUrl
 
 export interface UserData {
   id: number
@@ -102,11 +104,14 @@ export async function refreshAccessToken(): Promise<string | null> {
   const refreshToken = getRefreshToken()
 
   if (!refreshToken) {
+    console.warn("[Auth] No refresh token available")
     return null
   }
 
+  console.log("[Auth] Attempting to refresh access token...")
+
   try {
-    const response = await fetch(`${API_BASE_URL}/auth/token/refresh/`, {
+    const response = await fetch(`${API_BASE_URL}/auth/refresh`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -116,6 +121,11 @@ export async function refreshAccessToken(): Promise<string | null> {
 
     if (!response.ok) {
       // Refresh token is invalid or expired
+      const errorData = await response.json().catch(() => ({}))
+      console.error("[Auth] Token refresh failed:", response.status, errorData)
+
+      // Clear invalid tokens
+      clearAuthData()
       return null
     }
 
@@ -123,12 +133,14 @@ export async function refreshAccessToken(): Promise<string | null> {
 
     if (data.access) {
       localStorage.setItem("access_token", data.access)
+      console.log("[Auth] Access token refreshed successfully")
       return data.access
     }
 
+    console.error("[Auth] No access token in refresh response")
     return null
   } catch (error) {
-    console.error("Error refreshing token:", error)
+    console.error("[Auth] Error refreshing token:", error)
     return null
   }
 }

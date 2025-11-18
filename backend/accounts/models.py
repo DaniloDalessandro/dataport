@@ -2,6 +2,7 @@ from django.db import models
 from django.contrib.auth.models import AbstractUser
 from django.conf import settings
 from django.utils.crypto import get_random_string
+from django.core.validators import RegexValidator
 import secrets
 
 
@@ -40,6 +41,18 @@ class Company(models.Model):
 
 
 class CustomUser(AbstractUser):
+    PROFILE_TYPE_CHOICES = [
+        ('interno', 'Interno'),
+        ('externo', 'Externo'),
+    ]
+
+    profile_type = models.CharField(
+        'Tipo de Perfil',
+        max_length=10,
+        choices=PROFILE_TYPE_CHOICES,
+        default='interno',
+        help_text='Define se o usuário é interno ou externo à organização'
+    )
     companies = models.ManyToManyField(
         Company,
         related_name='users',
@@ -92,3 +105,110 @@ class CustomUser(AbstractUser):
     def generate_temporary_password():
         """Gera uma senha temporária segura"""
         return get_random_string(12)
+
+
+class InternalProfile(models.Model):
+    """Perfil para usuários internos da organização"""
+    user = models.OneToOneField(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='internal_profile',
+        verbose_name='Usuário',
+        limit_choices_to={'profile_type': 'interno'}
+    )
+    department = models.CharField(
+        'Departamento',
+        max_length=100,
+        blank=True,
+        null=True,
+        help_text='Departamento do usuário interno'
+    )
+    position = models.CharField(
+        'Cargo',
+        max_length=100,
+        blank=True,
+        null=True,
+        help_text='Cargo do usuário na organização'
+    )
+    employee_id = models.CharField(
+        'Matrícula',
+        max_length=50,
+        unique=True,
+        blank=True,
+        null=True,
+        help_text='Número de matrícula do funcionário'
+    )
+    created_at = models.DateTimeField('Criado em', auto_now_add=True)
+    updated_at = models.DateTimeField('Atualizado em', auto_now=True)
+
+    class Meta:
+        verbose_name = 'Perfil Interno'
+        verbose_name_plural = 'Perfis Internos'
+        ordering = ['user__username']
+
+    def __str__(self):
+        return f"{self.user.get_full_name() or self.user.username} - {self.department or 'Sem departamento'}"
+
+
+class ExternalProfile(models.Model):
+    """Perfil para usuários externos (operadores, agências, clientes)"""
+    EXTERNAL_TYPE_CHOICES = [
+        ('operador', 'Operador'),
+        ('agencia', 'Agência'),
+        ('cliente', 'Cliente'),
+    ]
+
+    user = models.OneToOneField(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='external_profile',
+        verbose_name='Usuário',
+        limit_choices_to={'profile_type': 'externo'}
+    )
+    company_name = models.CharField(
+        'Nome da Empresa',
+        max_length=200,
+        help_text='Nome da empresa do usuário externo'
+    )
+    external_type = models.CharField(
+        'Tipo',
+        max_length=20,
+        choices=EXTERNAL_TYPE_CHOICES,
+        help_text='Tipo de usuário externo'
+    )
+    cnpj = models.CharField(
+        'CNPJ',
+        max_length=18,
+        blank=True,
+        null=True,
+        validators=[
+            RegexValidator(
+                regex=r'^\d{2}\.\d{3}\.\d{3}/\d{4}-\d{2}$',
+                message='CNPJ deve estar no formato: 00.000.000/0000-00'
+            )
+        ],
+        help_text='CNPJ da empresa (Formato: 00.000.000/0000-00)'
+    )
+    contact_person = models.CharField(
+        'Pessoa de Contato',
+        max_length=200,
+        blank=True,
+        null=True,
+        help_text='Nome da pessoa de contato na empresa'
+    )
+    notes = models.TextField(
+        'Observações',
+        blank=True,
+        null=True,
+        help_text='Observações adicionais sobre o perfil externo'
+    )
+    created_at = models.DateTimeField('Criado em', auto_now_add=True)
+    updated_at = models.DateTimeField('Atualizado em', auto_now=True)
+
+    class Meta:
+        verbose_name = 'Perfil Externo'
+        verbose_name_plural = 'Perfis Externos'
+        ordering = ['company_name']
+
+    def __str__(self):
+        return f"{self.company_name} ({self.get_external_type_display()})"
