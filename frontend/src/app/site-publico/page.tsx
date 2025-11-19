@@ -4,7 +4,8 @@ import { useState, useEffect } from "react"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Search, Download, Database, Loader2, Table2 } from "lucide-react"
+import { Badge } from "@/components/ui/badge"
+import { Search, Download, Database, Loader2, Table2, Calendar, Hash, Columns3, CheckCircle2 } from "lucide-react"
 import { toast } from "sonner"
 import {
   Table,
@@ -46,6 +47,7 @@ export default function SitePublicoPage() {
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [datasets, setDatasets] = useState<PublicDataset[]>([])
   const [isLoadingDatasets, setIsLoadingDatasets] = useState(true)
+  const [selectedDataset, setSelectedDataset] = useState<PublicDataset | null>(null)
 
   // Fetch public datasets on mount
   useEffect(() => {
@@ -133,6 +135,47 @@ export default function SitePublicoPage() {
     } catch (error: any) {
       console.error("Download error:", error)
       toast.error(error.message || "Erro ao baixar dados")
+    }
+  }
+
+  const handleCardClick = async (dataset: PublicDataset) => {
+    setSelectedDataset(dataset)
+    setSearchResults([])
+    setIsModalOpen(true)
+    setIsSearching(true)
+
+    try {
+      const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
+      const response = await fetch(`${API_BASE_URL}/api/data-import/public-data/${dataset.id}/`)
+
+      if (!response.ok) {
+        throw new Error('Erro ao buscar dados')
+      }
+
+      const data = await response.json()
+
+      if (data.success) {
+        // Set the result as an array with one item to match the existing structure
+        setSearchResults([{
+          process_id: data.process_id,
+          table_name: data.table_name,
+          columns: data.columns,
+          data: data.data,
+          count: data.count
+        }])
+        if (data.data.length === 0) {
+          toast.info("Nenhum dado encontrado")
+        }
+      } else {
+        toast.error(data.error || "Erro ao buscar dados")
+        setSearchResults([])
+      }
+    } catch (error: any) {
+      console.error("Search error:", error)
+      toast.error(error.message || "Erro ao buscar dados")
+      setSearchResults([])
+    } finally {
+      setIsSearching(false)
     }
   }
 
@@ -243,39 +286,7 @@ export default function SitePublicoPage() {
                       >
                         <Card
                           className="hover:shadow-md hover:scale-[1.02] transition-all duration-200 border-l-2 border-l-black cursor-pointer bg-white"
-                          onClick={() => {
-                            setSearchQuery(dataset.table_name)
-                            // Use setTimeout to ensure state is updated before search
-                            setTimeout(() => {
-                              setIsSearching(true)
-                              setIsModalOpen(true)
-                              const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
-                              fetch(`${API_BASE_URL}/api/data-import/public-search/?q=${encodeURIComponent(dataset.table_name)}`)
-                                .then(response => {
-                                  if (!response.ok) throw new Error('Erro ao buscar dados')
-                                  return response.json()
-                                })
-                                .then(data => {
-                                  if (data.success) {
-                                    setSearchResults(data.results || [])
-                                    if (data.results.length === 0) {
-                                      toast.info("Nenhum resultado encontrado")
-                                    }
-                                  } else {
-                                    toast.error(data.error || "Erro ao buscar dados")
-                                    setSearchResults([])
-                                  }
-                                })
-                                .catch((error: any) => {
-                                  console.error("Search error:", error)
-                                  toast.error(error.message || "Erro ao buscar dados")
-                                  setSearchResults([])
-                                })
-                                .finally(() => {
-                                  setIsSearching(false)
-                                })
-                            }, 0)
-                          }}
+                          onClick={() => handleCardClick(dataset)}
                         >
                           <CardContent className="p-2">
                             <div className="flex items-center gap-1.5">
@@ -297,98 +308,112 @@ export default function SitePublicoPage() {
 
       </div>
 
-      {/* Results Modal */}
-      <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
-        <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle className="text-black">Resultados da busca: {searchQuery}</DialogTitle>
-          </DialogHeader>
+      {/* Dataset Detail Modal */}
+      <Dialog open={isModalOpen} onOpenChange={(open) => {
+        setIsModalOpen(open)
+        if (!open) {
+          setSearchResults([])
+        }
+      }}>
+        <DialogContent className="!max-w-[98vw] !w-[98vw] !h-[95vh] flex flex-col p-6">
+          {selectedDataset && (
+            <>
+              <DialogHeader className="flex-shrink-0">
+                <DialogTitle className="flex items-center gap-2 text-black">
+                  <Database className="h-5 w-5" />
+                  {selectedDataset.table_name}
+                </DialogTitle>
+              </DialogHeader>
 
-          {isSearching ? (
-            <div className="flex items-center justify-center py-12">
-              <Loader2 className="h-8 w-8 animate-spin text-black mr-3" />
-              <span className="text-lg text-gray-700 font-medium">Buscando...</span>
-            </div>
-          ) : searchResults.length === 0 ? (
-            <div className="text-center py-12">
-              <Database className="h-16 w-16 mx-auto mb-4 text-gray-300" />
-              <h3 className="text-xl font-semibold mb-2 text-black">Nenhum resultado encontrado</h3>
-              <p className="text-gray-600">
-                Tente buscar por outros termos
-              </p>
-            </div>
-          ) : (
-            <div className="space-y-4">
-              <p className="text-sm text-gray-700 font-medium">
-                Encontrados resultados em {searchResults.length} {searchResults.length === 1 ? 'base' : 'bases'} de dados
-              </p>
+              <div className="flex-shrink-0 flex items-center justify-between py-3 border-b border-gray-200">
+                <div className="flex items-center gap-4">
+                  <div className="flex items-center gap-2">
+                    <Hash className="h-4 w-4 text-gray-500" />
+                    <span className="text-sm text-gray-600">Registros:</span>
+                    <span className="font-bold text-black">{selectedDataset.record_count.toLocaleString()}</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Columns3 className="h-4 w-4 text-gray-500" />
+                    <span className="text-sm text-gray-600">Colunas:</span>
+                    <span className="font-bold text-black">{Object.keys(selectedDataset.column_structure || {}).length}</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Calendar className="h-4 w-4 text-gray-500" />
+                    <span className="text-sm text-gray-600">Criado em:</span>
+                    <span className="font-bold text-black">{new Date(selectedDataset.created_at).toLocaleDateString("pt-BR")}</span>
+                  </div>
+                </div>
+                <Button
+                  onClick={() => handleDownload(selectedDataset.id, selectedDataset.table_name)}
+                  variant="outline"
+                  size="sm"
+                  className="border-gray-300 hover:bg-gray-100 hover:border-black"
+                >
+                  <Download className="h-4 w-4 mr-2" />
+                  Download CSV
+                </Button>
+              </div>
 
-              {searchResults.map((result, index) => (
-                <Card key={index} className="overflow-hidden border-gray-200">
-                  <CardContent className="p-0">
-                    {/* Table header */}
-                    <div className="flex items-center justify-between p-3 bg-gray-50 border-b border-gray-200">
-                      <div className="flex items-center gap-2">
-                        <div className="h-8 w-8 rounded-lg bg-black flex items-center justify-center">
-                          <Database className="h-4 w-4 text-white" />
-                        </div>
-                        <div>
-                          <h3 className="font-bold text-sm text-black">{result.table_name}</h3>
-                          <p className="text-xs text-gray-600">
-                            {result.count} {result.count === 1 ? 'registro' : 'registros'}
-                          </p>
-                        </div>
-                      </div>
-                      <Button
-                        onClick={() => handleDownload(result.process_id, result.table_name)}
-                        variant="outline"
-                        size="sm"
-                        className="border-gray-300 hover:bg-gray-100 hover:border-black text-xs h-7"
-                      >
-                        <Download className="h-3 w-3 mr-1" />
-                        CSV
-                      </Button>
-                    </div>
-
-                    {/* Table data */}
-                    <div className="overflow-x-auto">
-                      <Table>
-                        <TableHeader>
-                          <TableRow className="bg-gray-50">
-                            <TableHead className="w-[40px] font-semibold text-black text-xs">#</TableHead>
-                            {result.columns.map((col) => (
-                              <TableHead key={col} className="font-mono font-semibold text-black text-xs">
-                                {col}
-                              </TableHead>
+              <div className="flex-1 overflow-auto mt-4">
+                {isSearching ? (
+                  <div className="flex items-center justify-center py-12">
+                    <Loader2 className="h-8 w-8 animate-spin text-black mr-3" />
+                    <span className="text-lg text-gray-700 font-medium">Carregando dados...</span>
+                  </div>
+                ) : searchResults.length === 0 ? (
+                  <div className="overflow-x-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow className="bg-gray-50">
+                          <TableHead className="w-[50px] font-bold text-black sticky top-0 bg-gray-50">#</TableHead>
+                          {Object.keys(selectedDataset.column_structure || {}).map((col) => (
+                            <TableHead key={col} className="font-mono font-bold text-black sticky top-0 bg-gray-50">
+                              {col}
+                            </TableHead>
+                          ))}
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        <TableRow>
+                          <TableCell colSpan={Object.keys(selectedDataset.column_structure || {}).length + 1} className="text-center py-8 text-gray-500">
+                            Carregando dados...
+                          </TableCell>
+                        </TableRow>
+                      </TableBody>
+                    </Table>
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow className="bg-gray-50">
+                          <TableHead className="w-[50px] font-bold text-black sticky top-0 bg-gray-50">#</TableHead>
+                          {searchResults[0]?.columns.map((col) => (
+                            <TableHead key={col} className="font-mono font-bold text-black sticky top-0 bg-gray-50">
+                              {col}
+                            </TableHead>
+                          ))}
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {searchResults[0]?.data.map((row, rowIndex) => (
+                          <TableRow key={rowIndex} className="hover:bg-gray-50 transition-colors">
+                            <TableCell className="font-medium text-gray-600">
+                              {rowIndex + 1}
+                            </TableCell>
+                            {searchResults[0]?.columns.map((col) => (
+                              <TableCell key={col} className="font-mono text-sm">
+                                {row[col] !== null && row[col] !== undefined ? String(row[col]) : "-"}
+                              </TableCell>
                             ))}
                           </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {result.data.slice(0, 10).map((row, rowIndex) => (
-                            <TableRow key={rowIndex} className="hover:bg-gray-50 transition-colors">
-                              <TableCell className="font-medium text-gray-600 text-xs">
-                                {rowIndex + 1}
-                              </TableCell>
-                              {result.columns.map((col) => (
-                                <TableCell key={col} className="font-mono text-xs">
-                                  {row[col] !== null && row[col] !== undefined ? String(row[col]) : "-"}
-                                </TableCell>
-                              ))}
-                            </TableRow>
-                          ))}
-                        </TableBody>
-                      </Table>
-                    </div>
-
-                    {result.count > 10 && (
-                      <div className="p-2 bg-gray-50 text-center text-xs text-gray-600 border-t border-gray-200">
-                        Mostrando 10 de {result.count} resultados. Baixe o CSV para ver todos.
-                      </div>
-                    )}
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                )}
+              </div>
+            </>
           )}
         </DialogContent>
       </Dialog>

@@ -792,3 +792,65 @@ class PublicDownloadDataView(APIView):
                 {'error': f'Erro ao baixar dados: {str(e)}'},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
+
+
+class PublicDataPreviewView(APIView):
+    """
+    Public view to get all data from a specific dataset (no authentication required)
+    GET /api/data-import/public-data/<id>/
+    """
+    permission_classes = [AllowAny]
+
+    def get(self, request, pk):
+        """
+        Get all data from a specific active dataset
+        """
+        try:
+            process = DataImportProcess.objects.get(pk=pk, status='active')
+
+            from django.db import connection
+
+            safe_table_name = DataImportService.sanitize_column_name(process.table_name)
+            columns = list(process.column_structure.keys())
+
+            if not columns:
+                return Response({
+                    'success': False,
+                    'error': 'Estrutura de colunas não disponível'
+                }, status=status.HTTP_400_BAD_REQUEST)
+
+            # Query all data from table
+            with connection.cursor() as cursor:
+                columns_str = ', '.join(columns)
+                query = f'SELECT {columns_str} FROM {safe_table_name}'
+
+                cursor.execute(query)
+                rows = cursor.fetchall()
+
+                # Convert to list of dictionaries
+                data = []
+                for row in rows:
+                    row_dict = {}
+                    for i, col_name in enumerate(columns):
+                        row_dict[col_name] = row[i]
+                    data.append(row_dict)
+
+            return Response({
+                'success': True,
+                'process_id': process.id,
+                'table_name': process.table_name,
+                'columns': columns,
+                'data': data,
+                'count': len(data)
+            })
+
+        except DataImportProcess.DoesNotExist:
+            return Response({
+                'success': False,
+                'error': 'Dados não encontrados ou não estão públicos'
+            }, status=status.HTTP_404_NOT_FOUND)
+        except Exception as e:
+            return Response({
+                'success': False,
+                'error': f'Erro ao buscar dados: {str(e)}'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

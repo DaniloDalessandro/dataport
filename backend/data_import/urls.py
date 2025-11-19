@@ -2,7 +2,7 @@ from django.urls import path
 from .views import (
     ImportDataView, ListProcessesView, ProcessDetailView, DeleteProcessView,
     AppendDataView, ToggleStatusView, DataPreviewView, SearchDataView, DownloadDataView,
-    PublicSearchDataView, PublicDownloadDataView, PublicListDatasetsView
+    PublicSearchDataView, PublicDownloadDataView, PublicListDatasetsView, PublicDataPreviewView
 )
 
 app_name = 'data_import'
@@ -21,4 +21,5 @@ urlpatterns = [
     path('public-datasets/', PublicListDatasetsView.as_view(), name='public-list-datasets'),
     path('public-search/', PublicSearchDataView.as_view(), name='public-search-data'),
     path('public-download/<int:pk>/', PublicDownloadDataView.as_view(), name='public-download-data'),
+    path('public-data/<int:pk>/', PublicDataPreviewView.as_view(), name='public-data-preview'),
 ]
