@@ -403,74 +403,92 @@ export default function SitePublicoPage() {
   }
 
   return (
-    <div className="min-h-screen relative overflow-hidden bg-[#fafafa]">
-      {/* Typographic Wave Animation - Minimalist Black on White */}
-      <div className="absolute bottom-0 left-0 right-0 h-72 overflow-hidden pointer-events-none">
-        <div className="typo-wave-container">
-          {/* Single large wave formed by characters */}
-          <div className="typo-wave-main">
-            {"LOA 1234 DWT 5678 BOCA 9012 PLR 3456 HORAS 7890 LOA 2468 DWT 1357 BOCA 8024 PLR 6813 HORAS 4590 LOA 1234 DWT 5678 BOCA 9012 PLR 3456 HORAS 7890 LOA 2468 DWT 1357 BOCA 8024 PLR 6813 HORAS 4590 LOA 1234 DWT 5678 BOCA 9012 PLR 3456 HORAS 7890 LOA 2468 DWT 1357 BOCA 8024 PLR 6813 HORAS 4590 ".split('').map((char, i) => {
-              // Create pointed wave pattern (triangular)
-              const period = 50
-              const pos = i % period
-              const normalized = pos / period
-              // Triangular/pointed wave
-              const triangleWave = normalized < 0.5
-                ? normalized * 2
-                : 2 - (normalized * 2)
-              const yOffset = triangleWave * 100
+    <div className="min-h-screen relative overflow-hidden bg-gradient-to-b from-sky-50 via-blue-50 to-cyan-100">
+      {/* Ocean Wave Animation */}
+      <div className="absolute bottom-0 left-0 right-0 h-64 overflow-hidden pointer-events-none">
+        {/* Wave layers */}
+        <svg className="absolute bottom-0 w-full h-full" viewBox="0 0 1440 320" preserveAspectRatio="none">
+          {/* Back wave - darkest */}
+          <path
+            className="wave-back"
+            fill="#1e3a5f"
+            fillOpacity="0.4"
+            d="M0,192L48,197.3C96,203,192,213,288,229.3C384,245,480,267,576,250.7C672,235,768,181,864,181.3C960,181,1056,235,1152,234.7C1248,235,1344,181,1392,154.7L1440,128L1440,320L1392,320C1344,320,1248,320,1152,320C1056,320,960,320,864,320C768,320,672,320,576,320C480,320,384,320,288,320C192,320,96,320,48,320L0,320Z"
+          />
+          {/* Middle wave */}
+          <path
+            className="wave-middle"
+            fill="#2563eb"
+            fillOpacity="0.5"
+            d="M0,256L48,240C96,224,192,192,288,181.3C384,171,480,181,576,197.3C672,213,768,235,864,224C960,213,1056,171,1152,165.3C1248,160,1344,192,1392,208L1440,224L1440,320L1392,320C1344,320,1248,320,1152,320C1056,320,960,320,864,320C768,320,672,320,576,320C480,320,384,320,288,320C192,320,96,320,48,320L0,320Z"
+          />
+          {/* Front wave - lightest */}
+          <path
+            className="wave-front"
+            fill="#3b82f6"
+            fillOpacity="0.6"
+            d="M0,288L48,272C96,256,192,224,288,213.3C384,203,480,213,576,229.3C672,245,768,267,864,261.3C960,256,1056,224,1152,213.3C1248,203,1344,213,1392,218.7L1440,224L1440,320L1392,320C1344,320,1248,320,1152,320C1056,320,960,320,864,320C768,320,672,320,576,320C480,320,384,320,288,320C192,320,96,320,48,320L0,320Z"
+          />
+        </svg>
 
-              return (
-                <span
-                  key={i}
-                  className="typo-char"
-                  style={{
-                    '--base-y': `${-yOffset}px`,
-                    animationDelay: `${(i % 50) * 0.08}s`,
-                  } as React.CSSProperties}
-                >
-                  {char}
-                </span>
-              )
-            })}
-          </div>
+        {/* Floating particles (bubbles) */}
+        <div className="bubbles">
+          {[...Array(15)].map((_, i) => (
+            <div
+              key={i}
+              className="bubble"
+              style={{
+                left: `${Math.random() * 100}%`,
+                animationDelay: `${Math.random() * 5}s`,
+                animationDuration: `${4 + Math.random() * 4}s`,
+              }}
+            />
+          ))}
         </div>
       </div>
 
       {/* Main Content */}
       <div className="relative z-10">
-        {/* Header - Minimalist */}
+        {/* Header - Maritime Theme */}
         <div className="flex flex-col items-center pt-20 pb-12">
-          {/* Logo/Title - Monochrome */}
+          {/* Logo/Title - Blue Maritime */}
           <div className="mb-8">
             <div className="flex items-center justify-center gap-4 mb-3">
-              <h1 className="text-6xl font-bold text-black tracking-tight">
+              <div className="p-3 bg-blue-600 rounded-xl shadow-lg">
+                <svg className="h-10 w-10 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M2 20a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-1H2v1Z"/>
+                  <path d="M12 3L2 12h3v7h14v-7h3L12 3Z"/>
+                  <path d="M12 8v4"/>
+                  <path d="M10 12h4"/>
+                </svg>
+              </div>
+              <h1 className="text-6xl font-bold bg-gradient-to-r from-blue-800 via-blue-600 to-cyan-600 bg-clip-text text-transparent tracking-tight">
                 DataPort
               </h1>
             </div>
-            <p className="text-center text-gray-600 font-medium mt-2">
-              Portal Público de Dados Abertos
+            <p className="text-center text-blue-700 font-medium mt-2">
+              Portal Público de Dados Portuários
             </p>
           </div>
 
-          {/* Search bar - Minimalist */}
+          {/* Search bar - Maritime Theme */}
           <form onSubmit={handleSearch} className="w-full max-w-2xl px-4">
             <div className="relative">
-              <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
+              <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 h-5 w-5 text-blue-400" />
               <Input
                 type="text"
-                placeholder="Buscar dados públicos..."
+                placeholder="Buscar dados portuários..."
                 value={searchQuery}
                 onChange={(e) => handleSearchInputChange(e.target.value)}
                 onFocus={() => searchQuery.trim() && filteredDatasets.length > 0 && setShowSuggestions(true)}
                 onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
-                className="w-full h-14 pl-12 pr-4 text-lg rounded-full border-2 border-gray-200 hover:border-gray-400 focus:border-black hover:shadow-lg focus:shadow-xl transition-all bg-white"
+                className="w-full h-14 pl-12 pr-4 text-lg rounded-full border-2 border-blue-200 hover:border-blue-400 focus:border-blue-600 hover:shadow-lg focus:shadow-xl transition-all bg-white/90 backdrop-blur-sm"
                 disabled={isSearching}
               />
               <Button
                 type="submit"
                 disabled={isSearching}
-                className="absolute right-2 top-1/2 transform -translate-y-1/2 rounded-full h-10 px-6 bg-black hover:bg-gray-800 transition-all"
+                className="absolute right-2 top-1/2 transform -translate-y-1/2 rounded-full h-10 px-6 bg-blue-600 hover:bg-blue-700 transition-all shadow-md"
               >
                 {isSearching ? (
                   <Loader2 className="h-4 w-4 animate-spin" />
@@ -481,18 +499,18 @@ export default function SitePublicoPage() {
 
               {/* Suggestions Dropdown */}
               {showSuggestions && (
-                <div className="absolute top-full left-0 right-0 mt-2 bg-white border border-gray-200 rounded-lg shadow-lg z-50 max-h-64 overflow-y-auto">
+                <div className="absolute top-full left-0 right-0 mt-2 bg-white/95 backdrop-blur-sm border border-blue-200 rounded-lg shadow-lg z-50 max-h-64 overflow-y-auto">
                   {filteredDatasets.map((dataset) => (
                     <button
                       key={dataset.id}
                       type="button"
                       onClick={() => handleSuggestionClick(dataset)}
-                      className="w-full px-4 py-3 text-left hover:bg-gray-100 flex items-center gap-3 border-b border-gray-100 last:border-b-0 transition-colors"
+                      className="w-full px-4 py-3 text-left hover:bg-blue-50 flex items-center gap-3 border-b border-blue-100 last:border-b-0 transition-colors"
                     >
-                      <Table2 className="h-4 w-4 text-gray-500 flex-shrink-0" />
+                      <Table2 className="h-4 w-4 text-blue-500 flex-shrink-0" />
                       <div className="flex-1 min-w-0">
-                        <p className="font-medium text-black truncate">{dataset.table_name}</p>
-                        <p className="text-xs text-gray-500">{dataset.record_count.toLocaleString()} registros</p>
+                        <p className="font-medium text-blue-900 truncate">{dataset.table_name}</p>
+                        <p className="text-xs text-blue-600">{dataset.record_count.toLocaleString()} registros</p>
                       </div>
                     </button>
                   ))}
@@ -501,22 +519,22 @@ export default function SitePublicoPage() {
             </div>
           </form>
 
-          {/* Dataset Cards - Public */}
+          {/* Dataset Cards - Maritime Theme */}
           {(
             <div className="mt-12 px-8 max-w-7xl w-full">
-              <p className="text-gray-600 mb-6 text-lg font-medium text-center">
-                Datasets públicos disponíveis
+              <p className="text-blue-700 mb-6 text-lg font-medium text-center">
+                Datasets portuários disponíveis
               </p>
 
               {isLoadingDatasets ? (
                 <div className="flex items-center justify-center py-12">
-                  <Loader2 className="h-8 w-8 animate-spin text-black mr-3" />
-                  <span className="text-gray-600">Carregando datasets...</span>
+                  <Loader2 className="h-8 w-8 animate-spin text-blue-600 mr-3" />
+                  <span className="text-blue-600">Carregando datasets...</span>
                 </div>
               ) : datasets.length === 0 ? (
                 <div className="text-center py-12">
-                  <Database className="h-12 w-12 mx-auto mb-4 text-gray-300" />
-                  <p className="text-gray-600">Nenhum dataset público disponível</p>
+                  <Database className="h-12 w-12 mx-auto mb-4 text-blue-300" />
+                  <p className="text-blue-600">Nenhum dataset público disponível</p>
                 </div>
               ) : (
                 <>
@@ -531,15 +549,15 @@ export default function SitePublicoPage() {
                           }}
                         >
                           <Card
-                            className="hover:shadow-md hover:scale-[1.02] transition-all duration-200 border-l-2 border-l-black cursor-pointer bg-white"
+                            className="hover:shadow-lg hover:scale-[1.02] transition-all duration-200 border-l-4 border-l-blue-500 cursor-pointer bg-white/80 backdrop-blur-sm hover:bg-white"
                             onClick={() => handleCardClick(dataset)}
                           >
-                            <CardContent className="p-2">
-                              <div className="flex items-center gap-1.5">
-                                <div className="p-1 rounded bg-gray-100 flex-shrink-0">
-                                  <Table2 className="h-2.5 w-2.5 text-black" />
+                            <CardContent className="p-3">
+                              <div className="flex items-center gap-2">
+                                <div className="p-1.5 rounded bg-blue-100 flex-shrink-0">
+                                  <Table2 className="h-3 w-3 text-blue-600" />
                                 </div>
-                                <h3 className="text-xs font-semibold truncate text-black">{dataset.table_name}</h3>
+                                <h3 className="text-sm font-semibold truncate text-blue-900">{dataset.table_name}</h3>
                               </div>
                             </CardContent>
                           </Card>
@@ -552,7 +570,7 @@ export default function SitePublicoPage() {
                       <Button
                         variant="outline"
                         onClick={() => setShowAllDatasets(!showAllDatasets)}
-                        className="border-gray-300 hover:bg-gray-100 hover:border-black"
+                        className="border-blue-300 hover:bg-blue-50 hover:border-blue-500 text-blue-700"
                       >
                         {showAllDatasets ? "Ver menos" : `Ver mais (${datasets.length - 6})`}
                       </Button>
@@ -730,48 +748,83 @@ export default function SitePublicoPage() {
 
       {/* CSS Animations */}
       <style jsx>{`
-        @keyframes typo-wave-scroll {
+        @keyframes wave-animation {
           0% {
             transform: translateX(0);
           }
           100% {
-            transform: translateX(-33.33%);
+            transform: translateX(-50%);
           }
         }
 
-        @keyframes wave-sway {
+        .wave-back {
+          animation: wave-move-back 8s ease-in-out infinite;
+        }
+
+        .wave-middle {
+          animation: wave-move-middle 6s ease-in-out infinite;
+        }
+
+        .wave-front {
+          animation: wave-move-front 4s ease-in-out infinite;
+        }
+
+        @keyframes wave-move-back {
           0%, 100% {
-            transform: translateY(var(--base-y)) scale(1);
+            d: path("M0,192L48,197.3C96,203,192,213,288,229.3C384,245,480,267,576,250.7C672,235,768,181,864,181.3C960,181,1056,235,1152,234.7C1248,235,1344,181,1392,154.7L1440,128L1440,320L1392,320C1344,320,1248,320,1152,320C1056,320,960,320,864,320C768,320,672,320,576,320C480,320,384,320,288,320C192,320,96,320,48,320L0,320Z");
           }
           50% {
-            transform: translateY(calc(var(--base-y) - 8px)) scale(1.02);
+            d: path("M0,160L48,176C96,192,192,224,288,213.3C384,203,480,149,576,149.3C672,149,768,203,864,218.7C960,235,1056,213,1152,197.3C1248,181,1344,171,1392,165.3L1440,160L1440,320L1392,320C1344,320,1248,320,1152,320C1056,320,960,320,864,320C768,320,672,320,576,320C480,320,384,320,288,320C192,320,96,320,48,320L0,320Z");
           }
         }
 
-        .typo-wave-container {
+        @keyframes wave-move-middle {
+          0%, 100% {
+            d: path("M0,256L48,240C96,224,192,192,288,181.3C384,171,480,181,576,197.3C672,213,768,235,864,224C960,213,1056,171,1152,165.3C1248,160,1344,192,1392,208L1440,224L1440,320L1392,320C1344,320,1248,320,1152,320C1056,320,960,320,864,320C768,320,672,320,576,320C480,320,384,320,288,320C192,320,96,320,48,320L0,320Z");
+          }
+          50% {
+            d: path("M0,224L48,213.3C96,203,192,181,288,192C384,203,480,245,576,250.7C672,256,768,224,864,208C960,192,1056,192,1152,202.7C1248,213,1344,235,1392,245.3L1440,256L1440,320L1392,320C1344,320,1248,320,1152,320C1056,320,960,320,864,320C768,320,672,320,576,320C480,320,384,320,288,320C192,320,96,320,48,320L0,320Z");
+          }
+        }
+
+        @keyframes wave-move-front {
+          0%, 100% {
+            d: path("M0,288L48,272C96,256,192,224,288,213.3C384,203,480,213,576,229.3C672,245,768,267,864,261.3C960,256,1056,224,1152,213.3C1248,203,1344,213,1392,218.7L1440,224L1440,320L1392,320C1344,320,1248,320,1152,320C1056,320,960,320,864,320C768,320,672,320,576,320C480,320,384,320,288,320C192,320,96,320,48,320L0,320Z");
+          }
+          50% {
+            d: path("M0,256L48,266.7C96,277,192,299,288,282.7C384,267,480,213,576,197.3C672,181,768,203,864,218.7C960,235,1056,245,1152,250.7C1248,256,1344,256,1392,256L1440,256L1440,320L1392,320C1344,320,1248,320,1152,320C1056,320,960,320,864,320C768,320,672,320,576,320C480,320,384,320,288,320C192,320,96,320,48,320L0,320Z");
+          }
+        }
+
+        .bubbles {
           position: absolute;
-          bottom: 0;
-          left: 0;
-          right: 0;
+          width: 100%;
           height: 100%;
+          overflow: hidden;
         }
 
-        .typo-wave-main {
+        .bubble {
           position: absolute;
-          bottom: 20px;
-          white-space: nowrap;
-          font-family: 'Courier New', Consolas, monospace;
-          font-weight: 700;
-          font-size: 14px;
-          letter-spacing: 0.03em;
-          color: #000;
-          animation: typo-wave-scroll 12s linear infinite;
+          bottom: -20px;
+          width: 8px;
+          height: 8px;
+          background: rgba(255, 255, 255, 0.5);
+          border-radius: 50%;
+          animation: bubble-rise linear infinite;
         }
 
-        .typo-char {
-          display: inline-block;
-          line-height: 1;
-          animation: wave-sway 4s ease-in-out infinite;
+        @keyframes bubble-rise {
+          0% {
+            transform: translateY(0) scale(1);
+            opacity: 0.6;
+          }
+          50% {
+            opacity: 0.8;
+          }
+          100% {
+            transform: translateY(-250px) scale(0.5);
+            opacity: 0;
+          }
         }
 
         @keyframes fadeIn {
