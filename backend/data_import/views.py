@@ -765,9 +765,9 @@ class PublicDownloadDataView(APIView):
                     status=status.HTTP_400_BAD_REQUEST
                 )
 
-            # Get format from query params
-            file_format = request.GET.get('format', 'csv').lower()
-            if file_format not in ['csv', 'xlsx', 'xls']:
+            # Get format from query params (use file_format to avoid conflict with DRF's format param)
+            file_format = request.GET.get('file_format', request.GET.get('format', 'csv')).lower()
+            if file_format not in ['csv', 'xlsx']:
                 file_format = 'csv'
 
             # Query data from table
@@ -779,14 +779,19 @@ class PublicDownloadDataView(APIView):
                 rows = cursor.fetchall()
 
             if file_format == 'csv':
-                # Create CSV
-                output = io.StringIO()
-                writer = csv.writer(output)
+                # Create CSV with proper line endings for Excel compatibility
+                output = io.StringIO(newline='')
+                writer = csv.writer(output, delimiter=';', quoting=csv.QUOTE_MINIMAL)
                 writer.writerow(selected_columns)
                 for row in rows:
                     writer.writerow(row)
 
-                response = HttpResponse(output.getvalue(), content_type='text/csv')
+                # Convert to bytes with UTF-8 BOM for Excel compatibility
+                csv_content = output.getvalue()
+                response = HttpResponse(
+                    '\ufeff' + csv_content,  # UTF-8 BOM for Excel
+                    content_type='text/csv; charset=utf-8'
+                )
                 response['Content-Disposition'] = f'attachment; filename="{process.table_name}.csv"'
 
             else:
@@ -813,15 +818,9 @@ class PublicDownloadDataView(APIView):
                 wb.save(output)
                 output.seek(0)
 
-                if file_format == 'xlsx':
-                    content_type = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-                    extension = 'xlsx'
-                else:
-                    content_type = 'application/vnd.ms-excel'
-                    extension = 'xls'
-
+                content_type = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
                 response = HttpResponse(output.getvalue(), content_type=content_type)
-                response['Content-Disposition'] = f'attachment; filename="{process.table_name}.{extension}"'
+                response['Content-Disposition'] = f'attachment; filename="{process.table_name}.xlsx"'
 
             return response
 

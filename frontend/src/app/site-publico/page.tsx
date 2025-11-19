@@ -69,6 +69,9 @@ export default function SitePublicoPage() {
   const [columnMetadata, setColumnMetadata] = useState<ColumnMetadata[]>([])
   const [activeFilters, setActiveFilters] = useState<Record<string, FilterValue>>({})
   const [filteredData, setFilteredData] = useState<any[]>([])
+  const [showSuggestions, setShowSuggestions] = useState(false)
+  const [filteredDatasets, setFilteredDatasets] = useState<PublicDataset[]>([])
+  const [showAllDatasets, setShowAllDatasets] = useState(false)
 
   // Fetch public datasets on mount
   useEffect(() => {
@@ -93,8 +96,30 @@ export default function SitePublicoPage() {
     fetchDatasets()
   }, [])
 
+  const handleSearchInputChange = (value: string) => {
+    setSearchQuery(value)
+
+    if (value.trim()) {
+      const filtered = datasets.filter(dataset =>
+        dataset.table_name.toLowerCase().includes(value.toLowerCase())
+      )
+      setFilteredDatasets(filtered)
+      setShowSuggestions(filtered.length > 0)
+    } else {
+      setFilteredDatasets([])
+      setShowSuggestions(false)
+    }
+  }
+
+  const handleSuggestionClick = (dataset: PublicDataset) => {
+    setShowSuggestions(false)
+    setSearchQuery(dataset.table_name)
+    handleCardClick(dataset)
+  }
+
   const handleSearch = async (e?: React.FormEvent) => {
     if (e) e.preventDefault()
+    setShowSuggestions(false)
 
     if (!searchQuery.trim()) {
       toast.error("Digite um termo para buscar")
@@ -142,7 +167,7 @@ export default function SitePublicoPage() {
       const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
 
       const columnsParam = selectedColumns.join(',')
-      const response = await fetch(`${API_BASE_URL}/api/data-import/public-download/${processId}/?format=${downloadFormat}&columns=${encodeURIComponent(columnsParam)}`)
+      const response = await fetch(`${API_BASE_URL}/api/data-import/public-download/${processId}/?file_format=${downloadFormat}&columns=${encodeURIComponent(columnsParam)}`)
 
       if (!response.ok) {
         throw new Error('Erro ao baixar dados')
@@ -436,7 +461,9 @@ export default function SitePublicoPage() {
                 type="text"
                 placeholder="Buscar dados públicos..."
                 value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
+                onChange={(e) => handleSearchInputChange(e.target.value)}
+                onFocus={() => searchQuery.trim() && filteredDatasets.length > 0 && setShowSuggestions(true)}
+                onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
                 className="w-full h-14 pl-12 pr-4 text-lg rounded-full border-2 border-gray-200 hover:border-gray-400 focus:border-black hover:shadow-lg focus:shadow-xl transition-all bg-white"
                 disabled={isSearching}
               />
@@ -451,6 +478,26 @@ export default function SitePublicoPage() {
                   "Buscar"
                 )}
               </Button>
+
+              {/* Suggestions Dropdown */}
+              {showSuggestions && (
+                <div className="absolute top-full left-0 right-0 mt-2 bg-white border border-gray-200 rounded-lg shadow-lg z-50 max-h-64 overflow-y-auto">
+                  {filteredDatasets.map((dataset) => (
+                    <button
+                      key={dataset.id}
+                      type="button"
+                      onClick={() => handleSuggestionClick(dataset)}
+                      className="w-full px-4 py-3 text-left hover:bg-gray-100 flex items-center gap-3 border-b border-gray-100 last:border-b-0 transition-colors"
+                    >
+                      <Table2 className="h-4 w-4 text-gray-500 flex-shrink-0" />
+                      <div className="flex-1 min-w-0">
+                        <p className="font-medium text-black truncate">{dataset.table_name}</p>
+                        <p className="text-xs text-gray-500">{dataset.record_count.toLocaleString()} registros</p>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
           </form>
 
@@ -472,33 +519,46 @@ export default function SitePublicoPage() {
                   <p className="text-gray-600">Nenhum dataset público disponível</p>
                 </div>
               ) : (
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
-                  {datasets.slice(0, 6).map((dataset, index) => {
-                    const columnCount = Object.keys(dataset.column_structure || {}).length
-                    return (
-                      <div
-                        key={dataset.id}
-                        style={{
-                          animation: `fadeIn 0.3s ease-out ${index * 0.05}s both`
-                        }}
-                      >
-                        <Card
-                          className="hover:shadow-md hover:scale-[1.02] transition-all duration-200 border-l-2 border-l-black cursor-pointer bg-white"
-                          onClick={() => handleCardClick(dataset)}
+                <>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+                    {(showAllDatasets ? datasets : datasets.slice(0, 6)).map((dataset, index) => {
+                      const columnCount = Object.keys(dataset.column_structure || {}).length
+                      return (
+                        <div
+                          key={dataset.id}
+                          style={{
+                            animation: `fadeIn 0.3s ease-out ${index * 0.05}s both`
+                          }}
                         >
-                          <CardContent className="p-2">
-                            <div className="flex items-center gap-1.5">
-                              <div className="p-1 rounded bg-gray-100 flex-shrink-0">
-                                <Table2 className="h-2.5 w-2.5 text-black" />
+                          <Card
+                            className="hover:shadow-md hover:scale-[1.02] transition-all duration-200 border-l-2 border-l-black cursor-pointer bg-white"
+                            onClick={() => handleCardClick(dataset)}
+                          >
+                            <CardContent className="p-2">
+                              <div className="flex items-center gap-1.5">
+                                <div className="p-1 rounded bg-gray-100 flex-shrink-0">
+                                  <Table2 className="h-2.5 w-2.5 text-black" />
+                                </div>
+                                <h3 className="text-xs font-semibold truncate text-black">{dataset.table_name}</h3>
                               </div>
-                              <h3 className="text-xs font-semibold truncate text-black">{dataset.table_name}</h3>
-                            </div>
-                          </CardContent>
-                        </Card>
-                      </div>
-                    )
-                  })}
-                </div>
+                            </CardContent>
+                          </Card>
+                        </div>
+                      )
+                    })}
+                  </div>
+                  {datasets.length > 6 && (
+                    <div className="flex justify-center mt-6">
+                      <Button
+                        variant="outline"
+                        onClick={() => setShowAllDatasets(!showAllDatasets)}
+                        className="border-gray-300 hover:bg-gray-100 hover:border-black"
+                      >
+                        {showAllDatasets ? "Ver menos" : `Ver mais (${datasets.length - 6})`}
+                      </Button>
+                    </div>
+                  )}
+                </>
               )}
             </div>
           )}
@@ -511,6 +571,8 @@ export default function SitePublicoPage() {
         setIsModalOpen(open)
         if (!open) {
           setSearchResults([])
+          setSearchQuery("")
+          setFilteredDatasets([])
         }
       }}>
         <DialogContent className="!max-w-[98vw] !w-[98vw] !h-[95vh] flex flex-col p-6">
@@ -549,7 +611,6 @@ export default function SitePublicoPage() {
                     <SelectContent>
                       <SelectItem value="csv">CSV</SelectItem>
                       <SelectItem value="xlsx">XLSX</SelectItem>
-                      <SelectItem value="xls">XLS</SelectItem>
                     </SelectContent>
                   </Select>
                   <Button
@@ -575,7 +636,12 @@ export default function SitePublicoPage() {
                     <Table>
                       <TableHeader>
                         <TableRow className="bg-gray-50">
-                          <TableHead className="w-[50px] font-bold text-black sticky top-0 bg-gray-50">#</TableHead>
+                          <TableHead className="w-[50px] font-bold text-black sticky top-0 bg-gray-50">
+                            <Checkbox
+                              checked={selectedColumns.length === Object.keys(selectedDataset.column_structure || {}).length}
+                              onCheckedChange={() => toggleAllColumns(Object.keys(selectedDataset.column_structure || {}))}
+                            />
+                          </TableHead>
                           {Object.keys(selectedDataset.column_structure || {}).map((col) => (
                             <TableHead key={col} className="font-mono font-bold text-black sticky top-0 bg-gray-50">
                               <div className="flex items-center gap-2">
@@ -609,13 +675,10 @@ export default function SitePublicoPage() {
                       <TableHeader>
                         <TableRow className="bg-gray-50">
                           <TableHead className="w-[50px] font-bold text-black sticky top-0 bg-gray-50">
-                            <div className="flex items-center gap-2">
-                              <Checkbox
-                                checked={selectedColumns.length === searchResults[0]?.columns.length}
-                                onCheckedChange={() => toggleAllColumns(searchResults[0]?.columns || [])}
-                              />
-                              #
-                            </div>
+                            <Checkbox
+                              checked={selectedColumns.length === searchResults[0]?.columns.length}
+                              onCheckedChange={() => toggleAllColumns(searchResults[0]?.columns || [])}
+                            />
                           </TableHead>
                           {searchResults[0]?.columns.map((col) => {
                             const colMeta = getColumnMetadata(col)
@@ -646,9 +709,7 @@ export default function SitePublicoPage() {
                       <TableBody>
                         {filteredData.map((row, rowIndex) => (
                           <TableRow key={rowIndex} className="hover:bg-gray-50 transition-colors">
-                            <TableCell className="font-medium text-gray-600">
-                              {rowIndex + 1}
-                            </TableCell>
+                            <TableCell className="w-[50px]"></TableCell>
                             {searchResults[0]?.columns.map((col) => (
                               <TableCell key={col} className="font-mono text-sm">
                                 {row[col] !== null && row[col] !== undefined ? String(row[col]) : "-"}
