@@ -734,14 +734,15 @@ class PublicSearchDataView(APIView):
 
 class PublicDownloadDataView(APIView):
     """
-    Public view to download table data as CSV (no authentication required)
-    GET /api/data-import/public-download/<id>/
+    Public view to download table data (no authentication required)
+    GET /api/data-import/public-download/<id>/?format=csv&columns=col1,col2
     """
     permission_classes = [AllowAny]
 
     def get(self, request, pk):
         """
-        Download table data as CSV (public access)
+        Download table data (public access)
+        Supports formats: csv, xlsx, xls
         """
         try:
             process = DataImportProcess.objects.get(pk=pk, status='active')
@@ -749,36 +750,78 @@ class PublicDownloadDataView(APIView):
             from django.db import connection
 
             safe_table_name = DataImportService.sanitize_column_name(process.table_name)
-            columns = list(process.column_structure.keys())
+            all_columns = list(process.column_structure.keys())
 
-            if not columns:
+            # Get selected columns from query params
+            columns_param = request.GET.get('columns', '')
+            if columns_param:
+                selected_columns = [col for col in columns_param.split(',') if col in all_columns]
+            else:
+                selected_columns = all_columns
+
+            if not selected_columns:
                 return Response(
-                    {'error': 'Estrutura de colunas não disponível'},
+                    {'error': 'Nenhuma coluna válida selecionada'},
                     status=status.HTTP_400_BAD_REQUEST
                 )
 
-            # Query all data from table
+            # Get format from query params
+            file_format = request.GET.get('format', 'csv').lower()
+            if file_format not in ['csv', 'xlsx', 'xls']:
+                file_format = 'csv'
+
+            # Query data from table
             with connection.cursor() as cursor:
-                columns_str = ', '.join(columns)
+                columns_str = ', '.join(selected_columns)
                 query = f'SELECT {columns_str} FROM {safe_table_name}'
 
                 cursor.execute(query)
                 rows = cursor.fetchall()
 
-            # Create CSV
-            output = io.StringIO()
-            writer = csv.writer(output)
+            if file_format == 'csv':
+                # Create CSV
+                output = io.StringIO()
+                writer = csv.writer(output)
+                writer.writerow(selected_columns)
+                for row in rows:
+                    writer.writerow(row)
 
-            # Write header
-            writer.writerow(columns)
+                response = HttpResponse(output.getvalue(), content_type='text/csv')
+                response['Content-Disposition'] = f'attachment; filename="{process.table_name}.csv"'
 
-            # Write data
-            for row in rows:
-                writer.writerow(row)
+            else:
+                # Create Excel (xlsx or xls)
+                import openpyxl
+                from openpyxl.utils import get_column_letter
 
-            # Create HTTP response
-            response = HttpResponse(output.getvalue(), content_type='text/csv')
-            response['Content-Disposition'] = f'attachment; filename="{process.table_name}.csv"'
+                wb = openpyxl.Workbook()
+                ws = wb.active
+                ws.title = process.table_name[:31]  # Excel sheet name limit
+
+                # Write header
+                for col_idx, col_name in enumerate(selected_columns, 1):
+                    cell = ws.cell(row=1, column=col_idx, value=col_name)
+                    cell.font = openpyxl.styles.Font(bold=True)
+
+                # Write data
+                for row_idx, row in enumerate(rows, 2):
+                    for col_idx, value in enumerate(row, 1):
+                        ws.cell(row=row_idx, column=col_idx, value=value)
+
+                # Save to bytes
+                output = io.BytesIO()
+                wb.save(output)
+                output.seek(0)
+
+                if file_format == 'xlsx':
+                    content_type = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+                    extension = 'xlsx'
+                else:
+                    content_type = 'application/vnd.ms-excel'
+                    extension = 'xls'
+
+                response = HttpResponse(output.getvalue(), content_type=content_type)
+                response['Content-Disposition'] = f'attachment; filename="{process.table_name}.{extension}"'
 
             return response
 
@@ -853,4 +896,87 @@ class PublicDataPreviewView(APIView):
             return Response({
                 'success': False,
                 'error': f'Erro ao buscar dados: {str(e)}'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class PublicColumnMetadataView(APIView):
+    """
+    Public view to get column metadata including types and unique values
+    GET /api/data-import/public-metadata/<id>/
+    """
+    permission_classes = [AllowAny]
+
+    def get(self, request, pk):
+        """
+        Get column metadata for filtering
+        """
+        try:
+            process = DataImportProcess.objects.get(pk=pk, status='active')
+
+            from django.db import connection
+
+            safe_table_name = DataImportService.sanitize_column_name(process.table_name)
+            column_structure = process.column_structure
+
+            if not column_structure:
+                return Response({
+                    'success': False,
+                    'error': 'Estrutura de colunas não disponível'
+                }, status=status.HTTP_400_BAD_REQUEST)
+
+            # Build metadata for each column
+            columns_metadata = []
+
+            with connection.cursor() as cursor:
+                for col_name, col_info in column_structure.items():
+                    col_type = col_info.get('type', 'string') if isinstance(col_info, dict) else str(col_info)
+
+                    # Determine filter type based on column type
+                    filter_type = 'string'
+                    if col_type in ['integer', 'int', 'bigint', 'smallint']:
+                        filter_type = 'integer'
+                    elif col_type in ['float', 'double', 'decimal', 'numeric', 'real']:
+                        filter_type = 'float'
+                    elif col_type in ['date']:
+                        filter_type = 'date'
+                    elif col_type in ['datetime', 'timestamp']:
+                        filter_type = 'datetime'
+                    elif col_type in ['boolean', 'bool']:
+                        filter_type = 'boolean'
+
+                    # Get unique values for category filters (limit to 100)
+                    unique_values = []
+                    try:
+                        cursor.execute(f'SELECT DISTINCT {col_name} FROM {safe_table_name} WHERE {col_name} IS NOT NULL LIMIT 100')
+                        unique_values = [str(row[0]) for row in cursor.fetchall() if row[0] is not None]
+
+                        # If there are few unique values, treat as category
+                        if len(unique_values) <= 20 and filter_type == 'string':
+                            filter_type = 'category'
+                    except Exception as e:
+                        print(f"Error getting unique values for {col_name}: {e}")
+
+                    columns_metadata.append({
+                        'name': col_name,
+                        'type': col_type,
+                        'filter_type': filter_type,
+                        'unique_values': unique_values if filter_type == 'category' else []
+                    })
+
+            return Response({
+                'success': True,
+                'process_id': process.id,
+                'table_name': process.table_name,
+                'columns': columns_metadata
+            })
+
+        except DataImportProcess.DoesNotExist:
+            return Response({
+                'success': False,
+                'error': 'Dados não encontrados ou não estão públicos'
+            }, status=status.HTTP_404_NOT_FOUND)
+        except Exception as e:
+            return Response({
+                'success': False,
+                'error': f'Erro ao buscar metadados: {str(e)}'
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

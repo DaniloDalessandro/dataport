@@ -21,6 +21,22 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
+import { Checkbox } from "@/components/ui/checkbox"
+import { ColumnFilterPopover, FilterValue } from "@/components/filters"
+
+interface ColumnMetadata {
+  name: string
+  type: string
+  filter_type: string
+  unique_values: string[]
+}
 
 interface SearchResult {
   process_id: number
@@ -48,6 +64,11 @@ export default function SitePublicoPage() {
   const [datasets, setDatasets] = useState<PublicDataset[]>([])
   const [isLoadingDatasets, setIsLoadingDatasets] = useState(true)
   const [selectedDataset, setSelectedDataset] = useState<PublicDataset | null>(null)
+  const [selectedColumns, setSelectedColumns] = useState<string[]>([])
+  const [downloadFormat, setDownloadFormat] = useState<string>("csv")
+  const [columnMetadata, setColumnMetadata] = useState<ColumnMetadata[]>([])
+  const [activeFilters, setActiveFilters] = useState<Record<string, FilterValue>>({})
+  const [filteredData, setFilteredData] = useState<any[]>([])
 
   // Fetch public datasets on mount
   useEffect(() => {
@@ -112,10 +133,16 @@ export default function SitePublicoPage() {
   }
 
   const handleDownload = async (processId: number, tableName: string) => {
+    if (selectedColumns.length === 0) {
+      toast.error("Selecione pelo menos uma coluna para download")
+      return
+    }
+
     try {
       const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
 
-      const response = await fetch(`${API_BASE_URL}/api/data-import/public-download/${processId}/`)
+      const columnsParam = selectedColumns.join(',')
+      const response = await fetch(`${API_BASE_URL}/api/data-import/public-download/${processId}/?format=${downloadFormat}&columns=${encodeURIComponent(columnsParam)}`)
 
       if (!response.ok) {
         throw new Error('Erro ao baixar dados')
@@ -125,7 +152,7 @@ export default function SitePublicoPage() {
       const url = window.URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url
-      a.download = `${tableName}.csv`
+      a.download = `${tableName}.${downloadFormat}`
       document.body.appendChild(a)
       a.click()
       window.URL.revokeObjectURL(url)
@@ -138,21 +165,46 @@ export default function SitePublicoPage() {
     }
   }
 
+  const toggleColumn = (column: string) => {
+    setSelectedColumns(prev =>
+      prev.includes(column)
+        ? prev.filter(c => c !== column)
+        : [...prev, column]
+    )
+  }
+
+  const toggleAllColumns = (columns: string[]) => {
+    if (selectedColumns.length === columns.length) {
+      setSelectedColumns([])
+    } else {
+      setSelectedColumns(columns)
+    }
+  }
+
   const handleCardClick = async (dataset: PublicDataset) => {
     setSelectedDataset(dataset)
     setSearchResults([])
+    setColumnMetadata([])
+    setActiveFilters({})
+    setFilteredData([])
     setIsModalOpen(true)
     setIsSearching(true)
 
     try {
       const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
-      const response = await fetch(`${API_BASE_URL}/api/data-import/public-data/${dataset.id}/`)
 
-      if (!response.ok) {
+      // Fetch data and metadata in parallel
+      const [dataResponse, metadataResponse] = await Promise.all([
+        fetch(`${API_BASE_URL}/api/data-import/public-data/${dataset.id}/`),
+        fetch(`${API_BASE_URL}/api/data-import/public-metadata/${dataset.id}/`)
+      ])
+
+      if (!dataResponse.ok) {
         throw new Error('Erro ao buscar dados')
       }
 
-      const data = await response.json()
+      const data = await dataResponse.json()
+      const metadata = metadataResponse.ok ? await metadataResponse.json() : null
 
       if (data.success) {
         // Set the result as an array with one item to match the existing structure
@@ -163,6 +215,15 @@ export default function SitePublicoPage() {
           data: data.data,
           count: data.count
         }])
+        setFilteredData(data.data)
+        // Initialize all columns as selected
+        setSelectedColumns(data.columns || [])
+
+        // Set metadata if available
+        if (metadata && metadata.success) {
+          setColumnMetadata(metadata.columns || [])
+        }
+
         if (data.data.length === 0) {
           toast.info("Nenhum dado encontrado")
         }
@@ -177,6 +238,143 @@ export default function SitePublicoPage() {
     } finally {
       setIsSearching(false)
     }
+  }
+
+  // Apply filters to data
+  const applyFilters = (data: any[], filters: Record<string, FilterValue>) => {
+    if (Object.keys(filters).length === 0) {
+      return data
+    }
+
+    return data.filter((row) => {
+      for (const [column, filter] of Object.entries(filters)) {
+        const value = row[column]
+        const strValue = value !== null && value !== undefined ? String(value).toLowerCase() : ""
+
+        switch (filter.type) {
+          case "string":
+            const filterVal = ((filter.value as string) || "").toLowerCase()
+            switch (filter.operator) {
+              case "contains":
+                if (!strValue.includes(filterVal)) return false
+                break
+              case "equals":
+                if (strValue !== filterVal) return false
+                break
+              case "starts_with":
+                if (!strValue.startsWith(filterVal)) return false
+                break
+              case "ends_with":
+                if (!strValue.endsWith(filterVal)) return false
+                break
+              case "not_contains":
+                if (strValue.includes(filterVal)) return false
+                break
+              case "is_empty":
+                if (strValue !== "") return false
+                break
+              case "is_not_empty":
+                if (strValue === "") return false
+                break
+            }
+            break
+
+          case "integer":
+          case "float":
+          case "number":
+            const numValue = parseFloat(strValue)
+            const numFilter = parseFloat(filter.value as string)
+            const numFilter2 = filter.value2 ? parseFloat(filter.value2) : null
+            switch (filter.operator) {
+              case "equals":
+                if (numValue !== numFilter) return false
+                break
+              case "not_equals":
+                if (numValue === numFilter) return false
+                break
+              case "greater_than":
+                if (numValue <= numFilter) return false
+                break
+              case "less_than":
+                if (numValue >= numFilter) return false
+                break
+              case "greater_or_equal":
+                if (numValue < numFilter) return false
+                break
+              case "less_or_equal":
+                if (numValue > numFilter) return false
+                break
+              case "between":
+                if (numFilter2 !== null && (numValue < numFilter || numValue > numFilter2)) return false
+                break
+              case "is_empty":
+                if (strValue !== "") return false
+                break
+              case "is_not_empty":
+                if (strValue === "") return false
+                break
+            }
+            break
+
+          case "category":
+            const selectedValues = filter.value as string[]
+            if (selectedValues.length > 0 && !selectedValues.includes(String(value))) {
+              return false
+            }
+            break
+
+          case "boolean":
+            const boolFilter = filter.value as string
+            if (boolFilter === "true" && strValue !== "true") return false
+            if (boolFilter === "false" && strValue !== "false") return false
+            if (boolFilter === "empty" && strValue !== "") return false
+            break
+
+          case "date":
+          case "datetime":
+            // Simple date comparison
+            const dateValue = new Date(value)
+            const dateFilter = new Date(filter.value as string)
+            const dateFilter2 = filter.value2 ? new Date(filter.value2) : null
+            switch (filter.operator) {
+              case "equals":
+                if (dateValue.toDateString() !== dateFilter.toDateString()) return false
+                break
+              case "before":
+                if (dateValue >= dateFilter) return false
+                break
+              case "after":
+                if (dateValue <= dateFilter) return false
+                break
+              case "between":
+                if (dateFilter2 && (dateValue < dateFilter || dateValue > dateFilter2)) return false
+                break
+            }
+            break
+        }
+      }
+      return true
+    })
+  }
+
+  const handleFilterChange = (column: string, filter: FilterValue | null) => {
+    const newFilters = { ...activeFilters }
+    if (filter) {
+      newFilters[column] = filter
+    } else {
+      delete newFilters[column]
+    }
+    setActiveFilters(newFilters)
+
+    // Apply filters to data
+    if (searchResults[0]?.data) {
+      const filtered = applyFilters(searchResults[0].data, newFilters)
+      setFilteredData(filtered)
+    }
+  }
+
+  const getColumnMetadata = (columnName: string): ColumnMetadata | undefined => {
+    return columnMetadata.find((col) => col.name === columnName)
   }
 
   return (
@@ -343,15 +541,27 @@ export default function SitePublicoPage() {
                     <span className="font-bold text-black">{new Date(selectedDataset.created_at).toLocaleDateString("pt-BR")}</span>
                   </div>
                 </div>
-                <Button
-                  onClick={() => handleDownload(selectedDataset.id, selectedDataset.table_name)}
-                  variant="outline"
-                  size="sm"
-                  className="border-gray-300 hover:bg-gray-100 hover:border-black"
-                >
-                  <Download className="h-4 w-4 mr-2" />
-                  Download CSV
-                </Button>
+                <div className="flex items-center gap-2">
+                  <Select value={downloadFormat} onValueChange={setDownloadFormat}>
+                    <SelectTrigger className="w-[100px]">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="csv">CSV</SelectItem>
+                      <SelectItem value="xlsx">XLSX</SelectItem>
+                      <SelectItem value="xls">XLS</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <Button
+                    onClick={() => handleDownload(selectedDataset.id, selectedDataset.table_name)}
+                    variant="outline"
+                    size="sm"
+                    className="border-gray-300 hover:bg-gray-100 hover:border-black"
+                  >
+                    <Download className="h-4 w-4 mr-2" />
+                    Download
+                  </Button>
+                </div>
               </div>
 
               <div className="flex-1 overflow-auto mt-4">
@@ -368,7 +578,13 @@ export default function SitePublicoPage() {
                           <TableHead className="w-[50px] font-bold text-black sticky top-0 bg-gray-50">#</TableHead>
                           {Object.keys(selectedDataset.column_structure || {}).map((col) => (
                             <TableHead key={col} className="font-mono font-bold text-black sticky top-0 bg-gray-50">
-                              {col}
+                              <div className="flex items-center gap-2">
+                                <Checkbox
+                                  checked={selectedColumns.includes(col)}
+                                  onCheckedChange={() => toggleColumn(col)}
+                                />
+                                {col}
+                              </div>
                             </TableHead>
                           ))}
                         </TableRow>
@@ -384,19 +600,51 @@ export default function SitePublicoPage() {
                   </div>
                 ) : (
                   <div className="overflow-x-auto">
+                    {Object.keys(activeFilters).length > 0 && (
+                      <div className="mb-2 text-sm text-gray-600">
+                        Mostrando {filteredData.length} de {searchResults[0]?.data.length} registros
+                      </div>
+                    )}
                     <Table>
                       <TableHeader>
                         <TableRow className="bg-gray-50">
-                          <TableHead className="w-[50px] font-bold text-black sticky top-0 bg-gray-50">#</TableHead>
-                          {searchResults[0]?.columns.map((col) => (
-                            <TableHead key={col} className="font-mono font-bold text-black sticky top-0 bg-gray-50">
-                              {col}
-                            </TableHead>
-                          ))}
+                          <TableHead className="w-[50px] font-bold text-black sticky top-0 bg-gray-50">
+                            <div className="flex items-center gap-2">
+                              <Checkbox
+                                checked={selectedColumns.length === searchResults[0]?.columns.length}
+                                onCheckedChange={() => toggleAllColumns(searchResults[0]?.columns || [])}
+                              />
+                              #
+                            </div>
+                          </TableHead>
+                          {searchResults[0]?.columns.map((col) => {
+                            const colMeta = getColumnMetadata(col)
+                            return (
+                              <TableHead key={col} className="font-mono font-bold text-black sticky top-0 bg-gray-50">
+                                <div className="flex items-center gap-2">
+                                  <Checkbox
+                                    checked={selectedColumns.includes(col)}
+                                    onCheckedChange={() => toggleColumn(col)}
+                                  />
+                                  {col}
+                                  {colMeta && (
+                                    <ColumnFilterPopover
+                                      column={col}
+                                      columnType={colMeta.filter_type}
+                                      uniqueValues={colMeta.unique_values}
+                                      value={activeFilters[col]}
+                                      onChange={(filter) => handleFilterChange(col, filter)}
+                                      isActive={!!activeFilters[col]}
+                                    />
+                                  )}
+                                </div>
+                              </TableHead>
+                            )
+                          })}
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {searchResults[0]?.data.map((row, rowIndex) => (
+                        {filteredData.map((row, rowIndex) => (
                           <TableRow key={rowIndex} className="hover:bg-gray-50 transition-colors">
                             <TableCell className="font-medium text-gray-600">
                               {rowIndex + 1}
