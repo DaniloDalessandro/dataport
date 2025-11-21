@@ -1,11 +1,10 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { useParams, useRouter } from "next/navigation"
+import { useParams } from "next/navigation"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { Separator } from "@/components/ui/separator"
 import {
   Table,
   TableBody,
@@ -15,7 +14,6 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import {
-  ArrowLeft,
   Database,
   Table2,
   Calendar,
@@ -23,7 +21,6 @@ import {
   Link as LinkIcon,
   CheckCircle2,
   XCircle,
-  Clock,
   AlertCircle,
   Loader2,
   Plus,
@@ -80,8 +77,7 @@ type ImportType = 'endpoint' | 'file'
 
 export default function DatasetDetailsPage() {
   const params = useParams()
-  const router = useRouter()
-  const [process, setProcess] = useState<DataImportProcess | null>(null)
+  const [dataset, setDataset] = useState<DataImportProcess | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [isAppendDialogOpen, setIsAppendDialogOpen] = useState(false)
@@ -94,15 +90,15 @@ export default function DatasetDetailsPage() {
   const [isLoadingPreview, setIsLoadingPreview] = useState(false)
 
   useEffect(() => {
-    const fetchProcess = async () => {
+    const fetchDataset = async () => {
       try {
         const data = await apiGet(`/api/data-import/processes/${params.id}/`)
-        setProcess(data)
+        setDataset(data)
         setError(null)
         // Fetch data preview
         fetchDataPreview()
       } catch (err: any) {
-        console.error("Error loading process:", err)
+        console.error("Error loading dataset:", err)
         setError(err.message || "Error loading data")
       } finally {
         setIsLoading(false)
@@ -110,7 +106,7 @@ export default function DatasetDetailsPage() {
     }
 
     if (params.id) {
-      fetchProcess()
+      fetchDataset()
     }
   }, [params.id])
 
@@ -128,33 +124,52 @@ export default function DatasetDetailsPage() {
   }
 
   const handleToggleStatus = async () => {
-    if (!process) return
+    if (!dataset) return
 
     setIsTogglingStatus(true)
+
+    console.log('🔄 Tentando alterar status do dataset:', {
+      datasetId: dataset.id,
+      currentStatus: dataset.status,
+      tableName: dataset.table_name
+    })
+
     try {
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/api/data-import/processes/${process.id}/toggle-status/`, {
+      const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
+      const token = localStorage.getItem('access_token')
+
+      console.log('📡 Enviando requisição para:', `${API_BASE_URL}/api/data-import/processes/${dataset.id}/toggle-status/`)
+      console.log('🔑 Token presente:', !!token)
+
+      const response = await fetch(`${API_BASE_URL}/api/data-import/processes/${dataset.id}/toggle-status/`, {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${localStorage.getItem('access_token')}`,
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
         },
       })
 
+      console.log('📥 Response status:', response.status)
+
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}))
+        console.error('❌ Erro na resposta:', errorData)
         throw new Error(errorData.error || errorData.detail || 'Erro ao alterar status')
       }
 
       const data = await response.json()
+      console.log('✅ Resposta recebida:', data)
 
       if (data.success) {
-        toast.success(data.message)
-        setProcess(data.process)
+        toast.success(data.message || 'Status alterado com sucesso!')
+        setDataset(data.process)
+        console.log('✅ Status atualizado:', data.process.status)
       } else {
         toast.error(data.error || "Erro ao alterar status")
       }
     } catch (error: any) {
-      console.error("Error toggling status:", error)
-      toast.error(error.message || "Erro ao alterar status")
+      console.error("❌ Erro ao alterar status:", error)
+      toast.error(error.message || "Erro ao alterar status. Verifique o console para mais detalhes.")
     } finally {
       setIsTogglingStatus(false)
     }
@@ -163,7 +178,7 @@ export default function DatasetDetailsPage() {
   const handleAppendData = async (e: React.FormEvent) => {
     e.preventDefault()
 
-    if (!process) return
+    if (!dataset) return
 
     // Validation
     if (importType === 'endpoint' && !endpointUrl) {
@@ -184,7 +199,7 @@ export default function DatasetDetailsPage() {
       if (importType === 'endpoint') {
         // Send as JSON for endpoint import
         const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
-        const response = await fetch(`${API_BASE_URL}/api/data-import/processes/${process.id}/append/`, {
+        const response = await fetch(`${API_BASE_URL}/api/data-import/processes/${dataset.id}/append/`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -193,7 +208,7 @@ export default function DatasetDetailsPage() {
           body: JSON.stringify({
             import_type: 'endpoint',
             endpoint_url: endpointUrl,
-            table_name: process.table_name,
+            table_name: dataset.table_name,
           }),
         })
 
@@ -207,7 +222,7 @@ export default function DatasetDetailsPage() {
         // Send as FormData for file upload
         const formData = new FormData()
         formData.append('import_type', 'file')
-        formData.append('table_name', process.table_name)
+        formData.append('table_name', dataset.table_name)
         if (selectedFile) {
           formData.append('file', selectedFile)
         }
@@ -218,7 +233,7 @@ export default function DatasetDetailsPage() {
         }
 
         const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
-        const response = await fetch(`${API_BASE_URL}/api/data-import/processes/${process.id}/append/`, {
+        const response = await fetch(`${API_BASE_URL}/api/data-import/processes/${dataset.id}/append/`, {
           method: 'POST',
           headers: {
             'Authorization': `Bearer ${token}`,
@@ -258,8 +273,8 @@ export default function DatasetDetailsPage() {
           toast.success(data.message || "Dados adicionados com sucesso!")
         }
 
-        // Update process with new data
-        setProcess(data.process)
+        // Update dataset with new data
+        setDataset(data.process)
         // Refresh data preview
         fetchDataPreview()
         // Reset form
@@ -292,7 +307,7 @@ export default function DatasetDetailsPage() {
     )
   }
 
-  if (error || !process) {
+  if (error || !dataset) {
     return (
       <div className="w-full py-4 px-6">
         <Card className="border-destructive">
@@ -302,10 +317,6 @@ export default function DatasetDetailsPage() {
                 <AlertCircle className="h-6 w-6 text-destructive" />
               </div>
               <p className="text-destructive font-medium">{error || "Dataset not found"}</p>
-              <Button onClick={() => router.push("/gestao")} variant="outline">
-                <ArrowLeft className="h-4 w-4 mr-2" />
-                Back to Management
-              </Button>
             </div>
           </CardContent>
         </Card>
@@ -313,34 +324,26 @@ export default function DatasetDetailsPage() {
     )
   }
 
-  const config = statusConfig[process.status as keyof typeof statusConfig] || statusConfig.active
+  const config = statusConfig[dataset.status as keyof typeof statusConfig] || statusConfig.active
   const StatusIcon = config.icon
-  const columns = Object.entries(process.column_structure || {})
+  const columns = Object.entries(dataset.column_structure || {})
 
   return (
     <div className="w-full py-4 px-6 space-y-4">
-      {/* Header with Back Button */}
+      {/* Header */}
       <div className="flex items-center gap-4">
-        <Button
-          onClick={() => router.push("/gestao")}
-          variant="outline"
-          size="sm"
-        >
-          <ArrowLeft className="h-4 w-4 mr-2" />
-          Back
-        </Button>
         <div className="flex items-center gap-3">
           <div className={`h-10 w-10 rounded-lg ${config.bgColor} flex items-center justify-center`}>
             <Database className={`h-5 w-5 ${config.color}`} />
           </div>
           <div>
-            <h1 className="text-2xl font-bold tracking-tight">{process.table_name}</h1>
-            <p className="text-sm text-muted-foreground">Dataset Details</p>
+            <h1 className="text-2xl font-bold tracking-tight">{dataset.table_name}</h1>
+            <p className="text-sm text-muted-foreground">Detalhes do Dataset</p>
           </div>
         </div>
         <Badge className={`${config.badge} ml-auto`} variant="secondary">
           <StatusIcon className="h-4 w-4 mr-1.5" />
-          {process.status_display}
+          {dataset.status_display}
         </Badge>
 
         {/* Action Buttons */}
@@ -349,14 +352,14 @@ export default function DatasetDetailsPage() {
             onClick={handleToggleStatus}
             disabled={isTogglingStatus}
             variant="outline"
-            className={process.status === 'active' ? 'border-gray-300' : 'border-green-300'}
+            className={dataset.status === 'active' ? 'border-gray-300' : 'border-green-300'}
           >
             {isTogglingStatus ? (
               <>
                 <Loader2 className="h-4 w-4 mr-2 animate-spin" />
                 Alterando...
               </>
-            ) : process.status === 'active' ? (
+            ) : dataset.status === 'active' ? (
               <>
                 <XCircle className="h-4 w-4 mr-2" />
                 Desativar
@@ -379,7 +382,7 @@ export default function DatasetDetailsPage() {
               <DialogHeader>
                 <DialogTitle>Adicionar Mais Dados</DialogTitle>
                 <DialogDescription>
-                  Adicione mais registros à tabela {process.table_name}
+                  Adicione mais registros à tabela {dataset.table_name}
                 </DialogDescription>
               </DialogHeader>
               <form onSubmit={handleAppendData} className="space-y-4">
@@ -479,94 +482,79 @@ export default function DatasetDetailsPage() {
         </div>
       </div>
 
-      {/* Overview Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Records</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-blue-600 dark:text-blue-400">
-              {process.record_count.toLocaleString()}
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Columns</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-purple-600 dark:text-purple-400">
-              {columns.length}
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Created</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-sm font-medium">
-              {format(new Date(process.created_at), "MMM dd, yyyy", { locale: enUS })}
-            </div>
-            <div className="text-xs text-muted-foreground">
-              {format(new Date(process.created_at), "HH:mm:ss", { locale: enUS })}
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Updated</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-sm font-medium">
-              {format(new Date(process.updated_at), "MMM dd, yyyy", { locale: enUS })}
-            </div>
-            <div className="text-xs text-muted-foreground">
-              {format(new Date(process.updated_at), "HH:mm:ss", { locale: enUS })}
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Details Card */}
+      {/* Detalhes da Importação */}
       <Card>
         <CardHeader>
-          <CardTitle className="text-lg">Import Details</CardTitle>
+          <CardTitle className="text-lg">Detalhes da Importação</CardTitle>
         </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <CardContent className="space-y-6">
+          {/* Estatísticas principais */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div className="space-y-1">
+              <p className="text-sm font-medium text-muted-foreground">Registros</p>
+              <p className="text-2xl font-bold text-blue-600 dark:text-blue-400">
+                {dataset.record_count.toLocaleString()}
+              </p>
+            </div>
+
+            <div className="space-y-1">
+              <p className="text-sm font-medium text-muted-foreground">Colunas</p>
+              <p className="text-2xl font-bold text-purple-600 dark:text-purple-400">
+                {columns.length}
+              </p>
+            </div>
+
+            <div className="space-y-1">
+              <p className="text-sm font-medium text-muted-foreground">Criado em</p>
+              <p className="text-sm font-medium">
+                {format(new Date(dataset.created_at), "dd/MM/yyyy", { locale: enUS })}
+              </p>
+              <p className="text-xs text-muted-foreground">
+                {format(new Date(dataset.created_at), "HH:mm:ss", { locale: enUS })}
+              </p>
+            </div>
+
+            <div className="space-y-1">
+              <p className="text-sm font-medium text-muted-foreground">Atualizado em</p>
+              <p className="text-sm font-medium">
+                {format(new Date(dataset.updated_at), "dd/MM/yyyy", { locale: enUS })}
+              </p>
+              <p className="text-xs text-muted-foreground">
+                {format(new Date(dataset.updated_at), "HH:mm:ss", { locale: enUS })}
+              </p>
+            </div>
+          </div>
+
+          {/* Informações detalhadas */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-4 border-t">
             <div className="space-y-2">
               <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
                 <LinkIcon className="h-4 w-4" />
-                Source Endpoint
+                Fonte de Dados
               </div>
               <div className="p-3 bg-muted/50 rounded-lg">
-                <p className="font-mono text-sm break-all">{process.endpoint_url}</p>
+                <p className="font-mono text-sm break-all">{dataset.endpoint_url}</p>
               </div>
             </div>
 
             <div className="space-y-2">
               <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
                 <Table2 className="h-4 w-4" />
-                Table Name
+                Nome da Tabela
               </div>
               <div className="p-3 bg-muted/50 rounded-lg">
-                <p className="font-mono text-sm">{process.table_name}</p>
+                <p className="font-mono text-sm">{dataset.table_name}</p>
               </div>
             </div>
 
-            {process.created_by_name && (
+            {dataset.created_by_name && (
               <div className="space-y-2">
                 <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
                   <User className="h-4 w-4" />
-                  Created By
+                  Criado por
                 </div>
                 <div className="p-3 bg-muted/50 rounded-lg">
-                  <p className="text-sm">{process.created_by_name}</p>
+                  <p className="text-sm">{dataset.created_by_name}</p>
                 </div>
               </div>
             )}
@@ -579,22 +567,22 @@ export default function DatasetDetailsPage() {
               <div className="p-3 bg-muted/50 rounded-lg">
                 <Badge className={config.badge} variant="secondary">
                   <StatusIcon className="h-3.5 w-3.5 mr-1.5" />
-                  {process.status_display}
+                  {dataset.status_display}
                 </Badge>
               </div>
             </div>
           </div>
 
-          {process.error_message && (
+          {dataset.error_message && (
             <div className="p-4 bg-red-50 dark:bg-red-900/10 border border-red-200 dark:border-red-900/30 rounded-lg">
               <div className="flex items-start gap-3">
                 <XCircle className="h-5 w-5 text-red-600 dark:text-red-400 mt-0.5 flex-shrink-0" />
                 <div className="space-y-1">
                   <p className="text-sm font-semibold text-red-700 dark:text-red-300">
-                    Import Error
+                    Erro na Importação
                   </p>
                   <p className="text-sm text-red-600 dark:text-red-400 leading-relaxed">
-                    {process.error_message}
+                    {dataset.error_message}
                   </p>
                 </div>
               </div>
@@ -606,9 +594,9 @@ export default function DatasetDetailsPage() {
       {/* Column Structure */}
       <Card>
         <CardHeader>
-          <CardTitle className="text-lg">Column Structure</CardTitle>
+          <CardTitle className="text-lg">Estrutura de Colunas</CardTitle>
           <p className="text-sm text-muted-foreground">
-            Schema definition for {columns.length} columns
+            Definição de esquema para {columns.length} colunas
           </p>
         </CardHeader>
         <CardContent>
@@ -654,9 +642,13 @@ export default function DatasetDetailsPage() {
       {/* Data Preview */}
       <Card>
         <CardHeader>
-          <CardTitle className="text-lg">Data Preview</CardTitle>
+          <CardTitle className="text-lg">Prévia dos Dados</CardTitle>
           <p className="text-sm text-muted-foreground">
-            Showing first 5 records of {process.record_count.toLocaleString()} total
+            {dataPreview && dataPreview.data ? (
+              <>Mostrando {dataPreview.data.length} de {dataset.record_count.toLocaleString()} registros totais</>
+            ) : (
+              <>Total de registros: {dataset.record_count.toLocaleString()}</>
+            )}
           </p>
         </CardHeader>
         <CardContent>

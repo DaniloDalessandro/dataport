@@ -170,12 +170,12 @@ export default function GestaoPage() {
               </div>
               <div>
                 <h3 className="font-semibold text-lg">
-                  {processes.length === 0 ? "No imports yet" : "No results found"}
+                  {processes.length === 0 ? "Nenhuma importação ainda" : "Nenhum resultado encontrado"}
                 </h3>
                 <p className="text-sm text-muted-foreground mt-1">
                   {processes.length === 0
-                    ? "Click 'Add' to get started"
-                    : "Try adjusting your search or filters"}
+                    ? "Clique em 'Adicionar' para começar"
+                    : "Tente ajustar sua busca ou filtros"}
                 </p>
               </div>
             </div>

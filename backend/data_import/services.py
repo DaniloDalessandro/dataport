@@ -1,3 +1,4 @@
+import logging
 import requests
 import re
 import time
@@ -7,6 +8,8 @@ from typing import Dict, List, Any, Tuple, Optional
 from django.core.files.uploadedfile import UploadedFile
 from django.db import connection
 from .models import DataImportProcess
+
+logger = logging.getLogger(__name__)
 
 # Suppress SSL warnings when verification is disabled
 warnings.filterwarnings('ignore', message='Unverified HTTPS request')
@@ -270,11 +273,22 @@ class DataImportService:
         """
         safe_table_name = DataImportService.sanitize_column_name(table_name)
 
-        columns_sql = ['id INTEGER PRIMARY KEY AUTOINCREMENT']
+        # Only add auto-increment ID if there's no 'id' column in the data
+        has_id_column = 'id' in column_structure
+
+        if has_id_column:
+            logger.info("Data already has 'id' column, skipping auto-increment ID")
+            columns_sql = []
+        else:
+            columns_sql = ['id INTEGER PRIMARY KEY AUTOINCREMENT']
 
         for col_name, col_info in column_structure.items():
             col_type = col_info['type']
-            columns_sql.append(f'{col_name} {col_type}')
+            # If this is an 'id' column from the data, make it the primary key
+            if col_name == 'id' and has_id_column:
+                columns_sql.insert(0, f'{col_name} INTEGER PRIMARY KEY')
+            else:
+                columns_sql.append(f'{col_name} {col_type}')
 
         create_table_sql = f"""
             CREATE TABLE IF NOT EXISTS {safe_table_name} (
@@ -414,14 +428,21 @@ class DataImportService:
                 raise ValueError(f'Tipo de importação inválido: {import_type}')
 
             # Create table and insert data (same for both types)
+            logger.info(f"Creating table {table_name} with {len(column_structure)} columns")
+            logger.info(f"Data contains {len(data)} records")
+
             DataImportService.create_table(table_name, column_structure)
             insert_stats = DataImportService.insert_data(table_name, data, column_structure)
+
+            logger.info(f"Insert stats: {insert_stats}")
 
             # Update process - keep as active
             process.status = 'active'
             process.record_count = insert_stats['inserted']
             process.column_structure = column_structure
             process.save()
+
+            logger.info(f"Process updated with record_count={insert_stats['inserted']}")
 
             # Store stats in process for later reference
             if insert_stats['duplicates'] > 0 or insert_stats['errors'] > 0:
