@@ -37,26 +37,6 @@ const data = {
       icon: Database,
     },
     {
-      title: "Usuários e Operadores",
-      url: "/data-operators",
-      icon: Users,
-    },
-    {
-      title: "Relatórios e Análises",
-      url: "/reports",
-      icon: FileSpreadsheet,
-    },
-    {
-      title: "Solicitações",
-      url: "/solicitacoes",
-      icon: FileText,
-    },
-    {
-      title: "Alertas e Issues",
-      url: "/alerts",
-      icon: AlertCircle,
-    },
-    {
       title: "Site Público",
       url: "/site-publico",
       icon: Globe,
