@@ -463,11 +463,11 @@ export default function SitePublicoPage() {
                 </svg>
               </div>
               <h1 className="text-6xl font-bold bg-gradient-to-r from-blue-800 via-blue-600 to-cyan-600 bg-clip-text text-transparent tracking-tight">
-                DataPort
+                DataDock
               </h1>
             </div>
             <p className="text-center text-blue-700 font-medium mt-2">
-              Portal Público de Dados Portuários
+              Portal Público de Dados
             </p>
           </div>
 

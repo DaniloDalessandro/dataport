@@ -2,12 +2,9 @@ import * as React from "react"
 import {
   Database,
   LayoutDashboard,
-  FileSpreadsheet,
-  Users,
-  FileText,
-  AlertCircle,
-  Globe,
-  HelpCircle
+  HelpCircle,
+  Bot,
+  Globe
 } from "lucide-react"
 
 import {
@@ -23,7 +20,7 @@ import {
 import { NavMain } from "@/components/nav-main"
 import { NavUser } from "@/components/nav-user"
 
-// Navigation data for DataPort - Data Management System
+// Navigation data for DataDock - Data Management System
 const data = {
   navMain: [
     {
@@ -32,15 +29,19 @@ const data = {
       icon: LayoutDashboard,
     },
     {
-      title: "Gestão de Dados",
-      url: "/gestao",
+      title: "Datasets",
+      url: "/datasets",
       icon: Database,
     },
     {
-      title: "Site Público",
+      title: "Alice",
+      url: "/alice",
+      icon: Bot,
+    },
+    {
+      title: "Site",
       url: "/site-publico",
       icon: Globe,
-      openInNewTab: true,
     },
     {
       title: "Ajuda",
@@ -80,16 +81,14 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
       <SidebarHeader>
         <SidebarMenu>
           <SidebarMenuItem>
-            <SidebarMenuButton size="lg" asChild>
-              <a href="/dashboard">
-                <div className="bg-sidebar-primary text-sidebar-primary-foreground flex aspect-square size-8 items-center justify-center rounded-lg">
-                  <Database className="size-4" />
-                </div>
-                <div className="flex flex-col gap-0.5 leading-none">
-                  <span className="font-semibold">DataPort</span>
-                  <span className="text-xs">Sistema de Gestão de Dados</span>
-                </div>
-              </a>
+            <SidebarMenuButton size="lg">
+              <div className="bg-sidebar-primary text-sidebar-primary-foreground flex aspect-square size-8 items-center justify-center rounded-lg">
+                <Database className="size-4" />
+              </div>
+              <div className="flex flex-col gap-0.5 leading-none">
+                <span className="font-semibold">DataDock</span>
+                <span className="text-xs">Sistema de Gestão de Dados</span>
+              </div>
             </SidebarMenuButton>
           </SidebarMenuItem>
         </SidebarMenu>

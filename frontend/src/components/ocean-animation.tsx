@@ -35,7 +35,7 @@ export function OceanAnimation() {
 
     // Define floating items
     const words = ["loa", "boca", "dwt", "duv", "plr", "pbm", "eta", "etb", "ets"]
-    const numbers = ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9"]
+    const numbers = ["0", "1"]
 
     // Helper function to create sharp wave pattern (triangular/sawtooth)
     const createSharpWave = (x: number, offset: number, amplitude: number, frequency: number) => {
@@ -48,17 +48,15 @@ export function OceanAnimation() {
     // Initialize floating items
     const initItems = () => {
       const items: FloatingItem[] = []
-      const numWaveLayers = 5 // Multiple wave layers for ocean depth
+      const numWaveLayers = 3 // Reduced from 5
 
       // Create items distributed across wave layers
       for (let layer = 0; layer < numWaveLayers; layer++) {
-        const baseY = 80 + (layer * 35) // Vertical offset for each wave layer
-        const itemsPerLayer = 50
+        const baseY = 120 + (layer * 45) // Adjusted baseY
+        const itemsPerLayer = 30 // Reduced from 50
 
         for (let i = 0; i < itemsPerLayer; i++) {
-          // Deeper layers (higher layer number) = more numbers, slower speed, darker/stronger blue
-          // Surface layers (lower layer number) = more words, faster speed, lighter blue
-          const numberProbability = 0.4 + (layer * 0.15) // Deeper = more numbers
+          const numberProbability = 0.5 + (layer * 0.1)
           const isWord = Math.random() > numberProbability
           const text = isWord
             ? words[Math.floor(Math.random() * words.length)]
@@ -69,10 +67,9 @@ export function OceanAnimation() {
             y: baseY,
             baseY: baseY,
             text: text,
-            // Much slower speeds - deeper layers move slower
-            speed: 0.3 - (layer * 0.05) + Math.random() * 0.15,
-            opacity: 0.4 + Math.random() * 0.4 - (layer * 0.05),
-            size: 18 + Math.random() * 10 - (layer * 2),
+            speed: 0.1 - (layer * 0.02) + Math.random() * 0.05, // Slower speed
+            opacity: 0.2 + Math.random() * 0.3 - (layer * 0.05), // Lower opacity
+            size: 14 + Math.random() * 8 - (layer * 2), // Smaller size
             waveLayer: layer,
           })
         }
@@ -91,28 +88,27 @@ export function OceanAnimation() {
       // Clear canvas
       ctx.clearRect(0, 0, canvas.width, canvas.height)
 
-      // Draw water background gradient
+      // Draw water background gradient (lighter blues)
       const waterGradient = ctx.createLinearGradient(0, 0, 0, canvas.height)
-      waterGradient.addColorStop(0, "rgba(59, 130, 246, 0.08)")
-      waterGradient.addColorStop(0.4, "rgba(37, 99, 235, 0.15)")
-      waterGradient.addColorStop(0.7, "rgba(29, 78, 216, 0.22)")
-      waterGradient.addColorStop(1, "rgba(30, 64, 175, 0.28)")
+      waterGradient.addColorStop(0, "rgba(173, 216, 230, 0.02)") // Light blue, very transparent
+      waterGradient.addColorStop(0.5, "rgba(135, 206, 250, 0.05)") // Lighter sky blue
+      waterGradient.addColorStop(1, "rgba(100, 149, 237, 0.08)") // Cornflower blue
       ctx.fillStyle = waterGradient
       ctx.fillRect(0, 0, canvas.width, canvas.height)
 
       // Draw subtle animated water waves in background
       ctx.save()
-      for (let i = 0; i < 3; i++) {
+      for (let i = 0; i < 2; i++) { // Reduced from 3
         ctx.beginPath()
         ctx.moveTo(0, canvas.height)
-        for (let x = 0; x <= canvas.width; x += 5) {
-          const y = Math.sin((x * 0.01 + waveOffset * (0.5 + i * 0.2)) * (1 + i * 0.3)) * (10 + i * 5)
-                    + canvas.height - (40 + i * 30)
+        for (let x = 0; x <= canvas.width; x += 10) {
+          const y = Math.sin((x * 0.005 + waveOffset * (0.4 + i * 0.2)) * (1 + i * 0.3)) * (8 + i * 4)
+                    + canvas.height - (60 + i * 40)
           ctx.lineTo(x, y)
         }
         ctx.lineTo(canvas.width, canvas.height)
         ctx.closePath()
-        ctx.fillStyle = `rgba(59, 130, 246, ${0.08 + i * 0.04})`
+        ctx.fillStyle = `rgba(173, 216, 230, ${0.05 + i * 0.03})` // Lighter blue
         ctx.fill()
       }
       ctx.restore()
@@ -125,71 +121,42 @@ export function OceanAnimation() {
           item.x = -120
         }
 
-        // Create sharp wave motion (triangular waves with pointed peaks)
-        // Each layer has different wave characteristics for more dramatic waves
-        const layerFrequency = 0.003 + (item.waveLayer * 0.0008)
-        const layerAmplitude = 65 - (item.waveLayer * 8) // Larger amplitude for more dramatic peaks
+        const layerFrequency = 0.002 + (item.waveLayer * 0.0005)
+        const layerAmplitude = 40 - (item.waveLayer * 6)
 
-        // Main sharp wave - larger amplitude
-        const sharpWave1 = createSharpWave(item.x, waveOffset * (1.3 - item.waveLayer * 0.1), layerAmplitude, layerFrequency)
-
-        // Secondary sharp wave for complexity
-        const sharpWave2 = createSharpWave(item.x, waveOffset * (0.9 + item.waveLayer * 0.05), layerAmplitude * 0.5, layerFrequency * 1.8)
-
-        // Third wave for extra sharpness
-        const sharpWave3 = createSharpWave(item.x, waveOffset * (1.5 - item.waveLayer * 0.08), layerAmplitude * 0.3, layerFrequency * 2.2)
-
-        // Combine waves for complex ocean pattern with sharper peaks
-        const waveY = sharpWave1 + sharpWave2 + sharpWave3
-
-        // Calculate final Y position
+        const sharpWave1 = createSharpWave(item.x, waveOffset * (1.1 - item.waveLayer * 0.1), layerAmplitude, layerFrequency)
+        const sharpWave2 = createSharpWave(item.x, waveOffset * (0.8 + item.waveLayer * 0.05), layerAmplitude * 0.4, layerFrequency * 1.5)
+        const waveY = sharpWave1 + sharpWave2
         const finalY = item.baseY + waveY
 
-        // Draw text forming the wave with enhanced visibility
         ctx.save()
 
-        // Increase opacity for better visibility
-        const enhancedOpacity = Math.min(item.opacity * 1.4, 0.9)
+        const enhancedOpacity = Math.min(item.opacity * 1.2, 0.7)
         ctx.globalAlpha = enhancedOpacity
 
-        // Larger, bolder font
-        ctx.font = `900 ${item.size}px "Geist Mono", monospace`
+        ctx.font = `700 ${item.size}px "Geist Mono", monospace`
 
-        // Enhanced color with more vibrance
-        // Deeper layers (higher waveLayer) = stronger/darker blue
-        // Surface layers (lower waveLayer) = lighter blue/cyan
-        const hue = 210 - (item.waveLayer * 8) // Deeper = more blue, Surface = cyan
-        const lightness = 70 - (item.waveLayer * 8) // Deeper = darker
-        const saturation = 90 + (item.waveLayer * 2) // Deeper = more saturated/stronger
+        // Shades of white and light blue
+        const hue = 200 - (item.waveLayer * 10)
+        const lightness = 85 - (item.waveLayer * 5)
+        const saturation = 40 + (item.waveLayer * 10)
 
-        // Add glow effect (multiple shadows for glow)
-        // Deeper layers have stronger blue glow
-        const glowIntensity = 0.6 + (item.waveLayer * 0.1)
-        const glowBlue = 30 + (item.waveLayer * 20) // Deeper = more intense blue in glow
-        ctx.shadowColor = `rgba(${glowBlue}, ${100 + item.waveLayer * 20}, 246, ${glowIntensity})`
-        ctx.shadowBlur = 15
+        // Lighter glow effect
+        const glowIntensity = 0.3 + (item.waveLayer * 0.05)
+        ctx.shadowColor = `rgba(173, 216, 230, ${glowIntensity})` // Light blue glow
+        ctx.shadowBlur = 10
         ctx.shadowOffsetX = 0
         ctx.shadowOffsetY = 0
 
-        // First glow layer
+        // Text fill
         ctx.fillStyle = `hsla(${hue}, ${saturation}%, ${lightness}%, ${enhancedOpacity})`
-        ctx.fillText(item.text, item.x, finalY)
-
-        // Second glow layer for more intensity
-        ctx.shadowBlur = 8
-        ctx.fillText(item.text, item.x, finalY)
-
-        // Main text (solid, bright) - deeper layers are stronger blue
-        ctx.shadowBlur = 0
-        const mainLightness = lightness + (10 - item.waveLayer * 2)
-        ctx.fillStyle = `hsla(${hue}, ${saturation}%, ${mainLightness}%, 1)`
         ctx.fillText(item.text, item.x, finalY)
 
         ctx.restore()
       })
 
-      // Increment wave offset for continuous animation (slower)
-      waveOffset += 0.015
+      // Slower wave offset
+      waveOffset += 0.01
 
       animationFrameRef.current = requestAnimationFrame(animate)
     }

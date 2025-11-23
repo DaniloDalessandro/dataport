@@ -6,9 +6,12 @@ from rest_framework.pagination import PageNumberPagination
 from django.views.decorators.csrf import csrf_exempt
 from django.utils.decorators import method_decorator
 from django.http import HttpResponse
+from django.db.models import Count, Sum, Q
+from django.db.models.functions import TruncMonth
 from .models import DataImportProcess
 from .serializers import DataImportRequestSerializer, DataImportProcessSerializer
 from .services import DataImportService
+from datetime import datetime, timedelta
 import csv
 import io
 
@@ -978,4 +981,112 @@ class PublicColumnMetadataView(APIView):
             return Response({
                 'success': False,
                 'error': f'Erro ao buscar metadados: {str(e)}'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class DashboardStatsView(APIView):
+    """
+    View para retornar estatísticas agregadas para o dashboard
+    GET /api/data-import/dashboard-stats/
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        """
+        Get aggregated statistics for dashboard
+        """
+        try:
+            # Get status counts
+            status_counts = {
+                'active': DataImportProcess.objects.filter(status='active').count(),
+                'inactive': DataImportProcess.objects.filter(status='inactive').count(),
+                'processing': 0,  # Can be implemented if you add processing status
+                'pending': 0,     # Can be implemented if you add pending status
+            }
+
+            # Total datasets by status (for pie chart)
+            dataset_status = [
+                {'name': 'Ativos', 'value': status_counts['active'], 'color': '#10b981'},
+                {'name': 'Arquivados', 'value': status_counts['inactive'], 'color': '#6b7280'},
+                {'name': 'Em Processamento', 'value': status_counts['processing'], 'color': '#f59e0b'},
+                {'name': 'Pendentes', 'value': status_counts['pending'], 'color': '#ef4444'},
+            ]
+
+            # Total records
+            total_records = DataImportProcess.objects.aggregate(Sum('record_count'))['record_count__sum'] or 0
+
+            # Storage calculation (rough estimate based on record count)
+            # Assuming average of 1KB per record
+            storage_gb = (total_records * 1024) / (1024 * 1024 * 1024)  # Convert bytes to GB
+            storage_tb = storage_gb / 1024
+
+            # Get monthly data (last 6 months)
+            six_months_ago = datetime.now() - timedelta(days=180)
+            monthly_data = DataImportProcess.objects.filter(
+                created_at__gte=six_months_ago
+            ).annotate(
+                month=TruncMonth('created_at')
+            ).values('month').annotate(
+                count=Count('id'),
+                total_records=Sum('record_count')
+            ).order_by('month')
+
+            # Format monthly data
+            monthly_volume = []
+            months = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez']
+            for item in monthly_data:
+                month_num = item['month'].month - 1
+                volume_gb = (item['total_records'] or 0) / 1000  # Convert to GB (simplified)
+                monthly_volume.append({
+                    'month': months[month_num],
+                    'value': int(volume_gb),
+                    'datasets': item['count']
+                })
+
+            # If less than 6 months of data, fill with zeros
+            while len(monthly_volume) < 6:
+                month_idx = (datetime.now().month - 6 + len(monthly_volume)) % 12
+                monthly_volume.insert(0, {
+                    'month': months[month_idx],
+                    'value': 0,
+                    'datasets': 0
+                })
+
+            # Calculate growth rate (comparing last month to previous month)
+            growth_rate = 0
+            if len(monthly_volume) >= 2:
+                last_month = monthly_volume[-1]['value']
+                prev_month = monthly_volume[-2]['value']
+                if prev_month > 0:
+                    growth_rate = ((last_month - prev_month) / prev_month) * 100
+
+            # Calculate average monthly volume
+            avg_volume = sum(item['value'] for item in monthly_volume) / len(monthly_volume) if monthly_volume else 0
+
+            return Response({
+                'success': True,
+                'data': {
+                    'metrics': {
+                        'total_datasets': status_counts['active'] + status_counts['inactive'] + status_counts['processing'] + status_counts['pending'],
+                        'active_datasets': status_counts['active'],
+                        'total_records': total_records,
+                        'storage_tb': round(storage_tb, 2),
+                        'storage_percent': min(int((storage_tb / 24) * 100), 100),  # Assuming 24TB capacity
+                        'growth_rate': round(growth_rate, 1)
+                    },
+                    'dataset_status': dataset_status,
+                    'monthly_volume': monthly_volume,
+                    'summary': {
+                        'avg_monthly_volume': round(avg_volume, 0),
+                        'active_percentage': round((status_counts['active'] / max(status_counts['active'] + status_counts['inactive'], 1)) * 100, 0)
+                    }
+                }
+            })
+
+        except Exception as e:
+            import traceback
+            print(f"Error in dashboard stats: {traceback.format_exc()}")
+            return Response({
+                'success': False,
+                'error': f'Erro ao buscar estatísticas: {str(e)}'
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

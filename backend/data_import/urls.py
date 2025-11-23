@@ -3,7 +3,7 @@ from .views import (
     ImportDataView, ListProcessesView, ProcessDetailView, DeleteProcessView,
     AppendDataView, ToggleStatusView, DataPreviewView, SearchDataView, DownloadDataView,
     PublicSearchDataView, PublicDownloadDataView, PublicListDatasetsView, PublicDataPreviewView,
-    PublicColumnMetadataView
+    PublicColumnMetadataView, DashboardStatsView
 )
 
 app_name = 'data_import'
@@ -18,6 +18,7 @@ urlpatterns = [
     path('processes/<int:pk>/preview/', DataPreviewView.as_view(), name='data-preview'),
     path('search/', SearchDataView.as_view(), name='search-data'),
     path('processes/<int:pk>/download/', DownloadDataView.as_view(), name='download-data'),
+    path('dashboard-stats/', DashboardStatsView.as_view(), name='dashboard-stats'),
     # Public endpoints (no authentication required)
     path('public-datasets/', PublicListDatasetsView.as_view(), name='public-list-datasets'),
     path('public-search/', PublicSearchDataView.as_view(), name='public-search-data'),
