@@ -1,9 +1,8 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useState, useCallback } from "react"
 import { useParams } from "next/navigation"
-import { Database, Calendar, FileText, Link as LinkIcon, ArrowLeft, Upload, X, RefreshCw, Hash, Columns3 } from "lucide-react"
-import { toast } from "sonner"
+import { Database, Calendar, ArrowLeft, Upload, X, RefreshCw, Hash, Columns3 } from "lucide-react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -25,6 +24,9 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
+import { apiGet } from "@/lib/api"
+import { useToast } from "@/hooks/use-toast"
+import { config } from "@/lib/config"
 
 interface Dataset {
   id: number
@@ -32,69 +34,54 @@ interface Dataset {
   status: string
   status_display: string
   record_count: number
-  column_structure: Record<string, any>
+  column_structure: Record<string, unknown>
   created_at: string
   updated_at: string
 }
 
 export default function DatasetDetailsPage() {
   const params = useParams()
-  const { id } = params
+  const id = params.id as string
+  const { toast } = useToast()
   const [dataset, setDataset] = useState<Dataset | null>(null)
-  const [dataPreview, setDataPreview] = useState<any[]>([])
+  const [dataPreview, setDataPreview] = useState<Record<string, string | number | boolean>[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [isUploadDialogOpen, setIsUploadDialogOpen] = useState(false)
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
   const [isUploading, setIsUploading] = useState(false)
   const [isRefreshing, setIsRefreshing] = useState(false)
 
-  const loadDataset = async () => {
+  const loadDataset = useCallback(async () => {
     setIsLoading(true)
     try {
-      const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
-      const token = localStorage.getItem('access_token')
+      // Fetch dataset details usando apiGet que trata autenticação automaticamente
+      const data = await apiGet(`/api/data-import/processes/${id}/`) as Dataset
+      setDataset(data)
 
-      // Fetch dataset details
-      const response = await fetch(`${API_BASE_URL}/api/data-import/processes/${id}/`, {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-        },
-      })
-
-      if (response.ok) {
-        const data = await response.json()
-        setDataset(data)
-
-        // Fetch data preview
-        const previewResponse = await fetch(`${API_BASE_URL}/api/data-import/processes/${id}/preview/`, {
-          headers: {
-            'Authorization': `Bearer ${token}`,
-          },
-        })
-
-        if (previewResponse.ok) {
-          const previewData = await previewResponse.json()
-          setDataPreview(previewData.data || [])
-        }
-      } else {
-        toast.error('Dataset não encontrado')
-        setDataset(null)
+      // Fetch data preview
+      const previewData = await apiGet(`/api/data-import/processes/${id}/preview/`) as {
+        data: Record<string, string | number | boolean>[]
       }
+      setDataPreview(previewData.data || [])
     } catch (error) {
       console.error('Error loading dataset:', error)
-      toast.error('Erro ao carregar dataset')
+      toast({
+        title: 'Erro ao carregar dataset',
+        description: error instanceof Error ? error.message : 'Erro desconhecido',
+        variant: 'destructive'
+      })
       setDataset(null)
     } finally {
       setIsLoading(false)
       setIsRefreshing(false)
     }
-  }
+  }, [id])
 
   useEffect(() => {
     if (id) {
       loadDataset()
     }
-  }, [id])
+  }, [id, loadDataset])
 
   const handleRefresh = () => {
     setIsRefreshing(true)
@@ -123,34 +110,45 @@ export default function DatasetDetailsPage() {
     setIsUploading(true)
 
     try {
-      const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
       const token = localStorage.getItem('access_token')
-
       const formData = new FormData()
       formData.append('file', selectedFile)
-      formData.append('process_id', id as string)
+      formData.append('import_type', 'file')
+      formData.append('table_name', dataset.table_name)
 
-      const response = await fetch(`${API_BASE_URL}/api/data-import/append/`, {
+      const response = await fetch(`${config.apiUrl}/api/data-import/processes/${id}/append/`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,
         },
         body: formData,
+        credentials: 'include',
       })
 
-      const data = await response.json()
-
       if (response.ok) {
-        toast.success(`${data.records_added || 0} registros adicionados com sucesso!`)
+        const data = await response.json()
+        toast({
+          title: 'Sucesso!',
+          description: data.message || `Registros adicionados com sucesso!`
+        })
         setIsUploadDialogOpen(false)
         setSelectedFile(null)
         loadDataset() // Reload dataset
       } else {
-        toast.error(data.error || 'Erro ao carregar arquivo')
+        const errorData = await response.json()
+        toast({
+          title: 'Erro ao carregar arquivo',
+          description: errorData.error || 'Erro desconhecido',
+          variant: 'destructive'
+        })
       }
     } catch (error) {
       console.error('Error uploading file:', error)
-      toast.error('Erro ao carregar arquivo')
+      toast({
+        title: 'Erro ao carregar arquivo',
+        description: error instanceof Error ? error.message : 'Erro desconhecido',
+        variant: 'destructive'
+      })
     } finally {
       setIsUploading(false)
     }
@@ -334,10 +332,10 @@ export default function DatasetDetailsPage() {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {dataPreview.map((row: any, index: number) => (
+                      {dataPreview.map((row: Record<string, string | number | boolean>, index: number) => (
                         <TableRow key={index}>
                           <TableCell className="font-medium text-gray-400">{index + 1}</TableCell>
-                          {Object.values(row).map((value: any, i: number) => (
+                          {Object.values(row).map((value: string | number | boolean | null | undefined, i: number) => (
                             <TableCell key={i}>
                               {value !== null && value !== undefined ? String(value) : '-'}
                             </TableCell>
@@ -362,7 +360,7 @@ export default function DatasetDetailsPage() {
           <DialogHeader>
             <DialogTitle>Carregar Mais Dados</DialogTitle>
             <DialogDescription>
-              Faça upload de um arquivo para adicionar mais dados ao dataset "{dataset.table_name}"
+              Faça upload de um arquivo para adicionar mais dados ao dataset &quot;{dataset.table_name}&quot;
             </DialogDescription>
           </DialogHeader>
           <form onSubmit={handleUploadSubmit}>

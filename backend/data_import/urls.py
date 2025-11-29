@@ -3,8 +3,9 @@ from .views import (
     ImportDataView, ListProcessesView, ProcessDetailView, DeleteProcessView,
     AppendDataView, ToggleStatusView, DataPreviewView, SearchDataView, DownloadDataView,
     PublicSearchDataView, PublicDownloadDataView, PublicListDatasetsView, PublicDataPreviewView,
-    PublicColumnMetadataView, DashboardStatsView
+    PublicColumnMetadataView, DashboardStatsView, ReanalyzeColumnTypesView
 )
+from .views_alice import AliceChatView
 
 app_name = 'data_import'
 
@@ -19,6 +20,9 @@ urlpatterns = [
     path('search/', SearchDataView.as_view(), name='search-data'),
     path('processes/<int:pk>/download/', DownloadDataView.as_view(), name='download-data'),
     path('dashboard-stats/', DashboardStatsView.as_view(), name='dashboard-stats'),
+    path('processes/<int:pk>/reanalyze-types/', ReanalyzeColumnTypesView.as_view(), name='reanalyze-types'),
+    # Alice AI Assistant
+    path('alice/chat/', AliceChatView.as_view(), name='alice-chat'),
     # Public endpoints (no authentication required)
     path('public-datasets/', PublicListDatasetsView.as_view(), name='public-list-datasets'),
     path('public-search/', PublicSearchDataView.as_view(), name='public-search-data'),

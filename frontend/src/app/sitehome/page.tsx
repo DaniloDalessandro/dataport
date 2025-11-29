@@ -215,6 +215,21 @@ function AnimatedCounter({ end, duration = 2000, label }: { end: number; duratio
   );
 }
 
+interface VehicleData {
+  plate: string;
+  brand: string;
+  model: string;
+  year: number;
+  color: string;
+  fuel_type: string;
+  current_conductor: {
+    full_name: string;
+    cpf: string;
+    cnh_number: string;
+    cnh_category: string;
+  } | null;
+}
+
 export default function SiteHomePage() {
   const [config, setConfig] = useState<SiteConfig | null>(null);
   const [isScrolled, setIsScrolled] = useState(false);
@@ -229,7 +244,7 @@ export default function SiteHomePage() {
   const [conductorCount, setConductorCount] = useState(0);
   const [isLoadingCounts, setIsLoadingCounts] = useState(true);
   const [searchPlate, setSearchPlate] = useState('');
-  const [vehicleData, setVehicleData] = useState<any>(null);
+  const [vehicleData, setVehicleData] = useState<VehicleData | null>(null);
   const [isSearchingVehicle, setIsSearchingVehicle] = useState(false);
   const [searchError, setSearchError] = useState('');
 
@@ -1636,7 +1651,7 @@ export default function SiteHomePage() {
                         return;
                       }
 
-                      const data = await response.json();
+                      const data: VehicleData = await response.json();
                       setVehicleData(data);
                     } catch (error) {
                       setSearchError('Erro ao conectar com o servidor');

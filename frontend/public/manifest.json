@@ -1,6 +1,6 @@
 {
-  "name": "DataPort - Sistema de Gestão de Dados",
-  "short_name": "DataPort",
+  "name": "DataDock - Sistema de Gestão de Dados",
+  "short_name": "DataDock",
   "description": "Sistema de Gestão de Dados Públicos",
   "start_url": "/",
   "display": "standalone",

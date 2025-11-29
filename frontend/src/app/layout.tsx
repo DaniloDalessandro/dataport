@@ -15,17 +15,18 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "ViaLumiar",
-  description: "Sistema de Gestão - ViaLumiar",
+  title: "DataDock",
+  description: "Sistema de Gestão de Dados - DataDock",
   icons: {
     icon: [
+      { url: '/favicon.svg', type: 'image/svg+xml' },
       { url: '/favicon.ico' },
     ],
     shortcut: '/favicon.ico',
     apple: '/favicon.ico',
   },
-  applicationName: 'ViaLumiar',
-  keywords: ['vialumiar', 'gestão', 'sistema'],
+  applicationName: 'DataDock',
+  keywords: ['datadock', 'dados', 'datasets', 'gestão', 'sistema'],
 };
 
 export const viewport = {
@@ -47,7 +48,7 @@ export default function RootLayout({
         <link rel="manifest" href="/manifest.json" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="default" />
-        <meta name="apple-mobile-web-app-title" content="ViaLumiar" />
+        <meta name="apple-mobile-web-app-title" content="DataDock" />
       </head>
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}

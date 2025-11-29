@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import {
   Popover,
@@ -44,6 +44,11 @@ export function ColumnFilterPopover({
   const [localFilter, setLocalFilter] = useState<FilterValue>(
     value || getDefaultFilter(column, columnType)
   )
+
+  // Sync local filter with value prop changes
+  useEffect(() => {
+    setLocalFilter(value || getDefaultFilter(column, columnType))
+  }, [value, column, columnType])
 
   function getDefaultFilter(col: string, type: string): FilterValue {
     switch (type) {

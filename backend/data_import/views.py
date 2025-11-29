@@ -194,32 +194,26 @@ class DeleteProcessView(APIView):
 
     def delete(self, request, pk):
         """
-        Delete a process and its associated table
+        Delete a process and its associated records (using ORM)
         """
         try:
             process = DataImportProcess.objects.get(pk=pk)
             table_name = process.table_name
 
-            # Drop the table from database
-            from django.db import connection
-            from .services import DataImportService
+            # Delete all associated records using ORM (CASCADE will handle this automatically)
+            # But we'll do it explicitly for logging
+            from .models import ImportedDataRecord
+            record_count = ImportedDataRecord.objects.filter(process=process).count()
 
-            safe_table_name = DataImportService.sanitize_column_name(table_name)
-
-            with connection.cursor() as cursor:
-                try:
-                    cursor.execute(f'DROP TABLE IF EXISTS {safe_table_name}')
-                    print(f"✅ Tabela {safe_table_name} deletada com sucesso")
-                except Exception as e:
-                    print(f"⚠️ Erro ao deletar tabela {safe_table_name}: {e}")
-
-            # Delete the process record
+            # Delete the process record (CASCADE will delete all ImportedDataRecord entries)
             process.delete()
+
+            print(f"✅ Processo {table_name} e {record_count} registros deletados com sucesso")
 
             return Response(
                 {
                     'success': True,
-                    'message': f'Processo e tabela {table_name} deletados com sucesso'
+                    'message': f'Processo {table_name} e {record_count} registros deletados com sucesso'
                 },
                 status=status.HTTP_200_OK
             )
@@ -287,9 +281,9 @@ class AppendDataView(APIView):
             else:
                 raise ValueError(f'Tipo de importação inválido: {import_type}')
 
-            # Insert new data into existing table
-            insert_stats = DataImportService.insert_data(
-                process.table_name,
+            # Insert new data using ORM
+            insert_stats = DataImportService.insert_data_orm(
+                process,
                 data,
                 process.column_structure
             )
@@ -407,15 +401,11 @@ class DataPreviewView(APIView):
 
     def get(self, request, pk):
         """
-        Get preview of table data (first 5 records)
+        Get preview of table data (first 5 records) using ORM
         """
         try:
             process = DataImportProcess.objects.get(pk=pk)
-
-            from django.db import connection
-            from .services import DataImportService
-
-            safe_table_name = DataImportService.sanitize_column_name(process.table_name)
+            from .models import ImportedDataRecord
 
             # Get column names from column_structure
             columns = list(process.column_structure.keys())
@@ -426,36 +416,18 @@ class DataPreviewView(APIView):
                     status=status.HTTP_400_BAD_REQUEST
                 )
 
-            # Query the table for first 5 records
-            with connection.cursor() as cursor:
-                columns_str = ', '.join(columns)
-                query = f'SELECT {columns_str} FROM {safe_table_name} LIMIT 5'
+            # Query records using ORM
+            records = ImportedDataRecord.objects.filter(process=process)[:5]
 
-                try:
-                    cursor.execute(query)
-                    rows = cursor.fetchall()
+            # Convert to list of dictionaries
+            data = [record.data for record in records]
 
-                    # Convert to list of dictionaries
-                    data = []
-                    for row in rows:
-                        row_dict = {}
-                        for i, col_name in enumerate(columns):
-                            row_dict[col_name] = row[i]
-                        data.append(row_dict)
-
-                    return Response({
-                        'success': True,
-                        'columns': columns,
-                        'data': data,
-                        'total_records': process.record_count
-                    })
-
-                except Exception as e:
-                    print(f"Erro ao consultar tabela {safe_table_name}: {e}")
-                    return Response(
-                        {'error': f'Erro ao consultar dados da tabela: {str(e)}'},
-                        status=status.HTTP_500_INTERNAL_SERVER_ERROR
-                    )
+            return Response({
+                'success': True,
+                'columns': columns,
+                'data': data,
+                'total_records': process.record_count
+            })
 
         except DataImportProcess.DoesNotExist:
             return Response(
@@ -478,7 +450,7 @@ class SearchDataView(APIView):
 
     def get(self, request):
         """
-        Search data across all active tables
+        Search data across all active processes using ORM
         """
         query = request.GET.get('q', '').strip()
 
@@ -491,55 +463,44 @@ class SearchDataView(APIView):
         try:
             # Get all active processes
             active_processes = DataImportProcess.objects.filter(status='active')
+            from .models import ImportedDataRecord
+            from django.db.models import Q
+            import json
 
-            from django.db import connection
             results = []
 
             for process in active_processes:
-                safe_table_name = DataImportService.sanitize_column_name(process.table_name)
                 columns = list(process.column_structure.keys())
 
                 if not columns:
                     continue
 
-                # Build search query for all columns
-                where_clauses = []
+                # Build Q objects for searching in JSON fields
+                # Search in any column value (converted to string)
+                search_query = Q()
                 for col in columns:
-                    where_clauses.append(f"CAST({col} AS TEXT) LIKE %s")
-
-                search_pattern = f'%{query}%'
-                where_params = [search_pattern] * len(columns)
-
-                search_sql = f'''
-                    SELECT {', '.join(columns)}
-                    FROM {safe_table_name}
-                    WHERE {' OR '.join(where_clauses)}
-                    LIMIT 100
-                '''
+                    # Django JSONField lookup: data__column_name__icontains
+                    search_query |= Q(**{f'data__{col}__icontains': query})
 
                 try:
-                    with connection.cursor() as cursor:
-                        cursor.execute(search_sql, where_params)
-                        rows = cursor.fetchall()
+                    # Find matching records
+                    matching_records = ImportedDataRecord.objects.filter(
+                        process=process
+                    ).filter(search_query)[:100]
 
-                        if rows:
-                            table_results = []
-                            for row in rows:
-                                row_dict = {}
-                                for i, col_name in enumerate(columns):
-                                    row_dict[col_name] = row[i]
-                                table_results.append(row_dict)
+                    if matching_records.exists():
+                        table_results = [record.data for record in matching_records]
 
-                            results.append({
-                                'process_id': process.id,
-                                'table_name': process.table_name,
-                                'columns': columns,
-                                'data': table_results,
-                                'count': len(table_results)
-                            })
+                        results.append({
+                            'process_id': process.id,
+                            'table_name': process.table_name,
+                            'columns': columns,
+                            'data': table_results,
+                            'count': len(table_results)
+                        })
 
                 except Exception as e:
-                    print(f"Erro ao buscar na tabela {safe_table_name}: {e}")
+                    print(f"Erro ao buscar no processo {process.table_name}: {e}")
                     continue
 
             return Response({
@@ -565,14 +526,12 @@ class DownloadDataView(APIView):
 
     def get(self, request, pk):
         """
-        Download table data as CSV
+        Download table data as CSV using ORM
         """
         try:
             process = DataImportProcess.objects.get(pk=pk)
+            from .models import ImportedDataRecord
 
-            from django.db import connection
-
-            safe_table_name = DataImportService.sanitize_column_name(process.table_name)
             columns = list(process.column_structure.keys())
 
             if not columns:
@@ -581,13 +540,8 @@ class DownloadDataView(APIView):
                     status=status.HTTP_400_BAD_REQUEST
                 )
 
-            # Query all data from table
-            with connection.cursor() as cursor:
-                columns_str = ', '.join(columns)
-                query = f'SELECT {columns_str} FROM {safe_table_name}'
-
-                cursor.execute(query)
-                rows = cursor.fetchall()
+            # Query all data using ORM
+            records = ImportedDataRecord.objects.filter(process=process)
 
             # Create CSV
             output = io.StringIO()
@@ -597,7 +551,8 @@ class DownloadDataView(APIView):
             writer.writerow(columns)
 
             # Write data
-            for row in rows:
+            for record in records:
+                row = [record.data.get(col, '') for col in columns]
                 writer.writerow(row)
 
             # Create HTTP response
@@ -657,7 +612,7 @@ class PublicSearchDataView(APIView):
 
     def get(self, request):
         """
-        Public search across all active tables
+        Public search across all active tables using ORM
         """
         query = request.GET.get('q', '').strip()
 
@@ -670,55 +625,41 @@ class PublicSearchDataView(APIView):
         try:
             # Get all active processes
             active_processes = DataImportProcess.objects.filter(status='active')
+            from .models import ImportedDataRecord
+            from django.db.models import Q
 
-            from django.db import connection
             results = []
 
             for process in active_processes:
-                safe_table_name = DataImportService.sanitize_column_name(process.table_name)
                 columns = list(process.column_structure.keys())
 
                 if not columns:
                     continue
 
-                # Build search query for all columns
-                where_clauses = []
+                # Build Q objects for searching in JSON fields
+                search_query = Q()
                 for col in columns:
-                    where_clauses.append(f"CAST({col} AS TEXT) LIKE %s")
-
-                search_pattern = f'%{query}%'
-                where_params = [search_pattern] * len(columns)
-
-                search_sql = f'''
-                    SELECT {', '.join(columns)}
-                    FROM {safe_table_name}
-                    WHERE {' OR '.join(where_clauses)}
-                    LIMIT 100
-                '''
+                    search_query |= Q(**{f'data__{col}__icontains': query})
 
                 try:
-                    with connection.cursor() as cursor:
-                        cursor.execute(search_sql, where_params)
-                        rows = cursor.fetchall()
+                    # Find matching records
+                    matching_records = ImportedDataRecord.objects.filter(
+                        process=process
+                    ).filter(search_query)[:100]
 
-                        if rows:
-                            table_results = []
-                            for row in rows:
-                                row_dict = {}
-                                for i, col_name in enumerate(columns):
-                                    row_dict[col_name] = row[i]
-                                table_results.append(row_dict)
+                    if matching_records.exists():
+                        table_results = [record.data for record in matching_records]
 
-                            results.append({
-                                'process_id': process.id,
-                                'table_name': process.table_name,
-                                'columns': columns,
-                                'data': table_results,
-                                'count': len(table_results)
-                            })
+                        results.append({
+                            'process_id': process.id,
+                            'table_name': process.table_name,
+                            'columns': columns,
+                            'data': table_results,
+                            'count': len(table_results)
+                        })
 
                 except Exception as e:
-                    print(f"Erro ao buscar na tabela {safe_table_name}: {e}")
+                    print(f"Erro ao buscar no processo {process.table_name}: {e}")
                     continue
 
             return Response({
@@ -773,20 +714,17 @@ class PublicDownloadDataView(APIView):
             if file_format not in ['csv', 'xlsx']:
                 file_format = 'csv'
 
-            # Query data from table
-            with connection.cursor() as cursor:
-                columns_str = ', '.join(selected_columns)
-                query = f'SELECT {columns_str} FROM {safe_table_name}'
-
-                cursor.execute(query)
-                rows = cursor.fetchall()
+            # Query data using ORM
+            from .models import ImportedDataRecord
+            records = ImportedDataRecord.objects.filter(process=process)
 
             if file_format == 'csv':
                 # Create CSV with proper line endings for Excel compatibility
                 output = io.StringIO(newline='')
                 writer = csv.writer(output, delimiter=';', quoting=csv.QUOTE_MINIMAL)
                 writer.writerow(selected_columns)
-                for row in rows:
+                for record in records:
+                    row = [record.data.get(col, '') for col in selected_columns]
                     writer.writerow(row)
 
                 # Convert to bytes with UTF-8 BOM for Excel compatibility
@@ -812,8 +750,9 @@ class PublicDownloadDataView(APIView):
                     cell.font = openpyxl.styles.Font(bold=True)
 
                 # Write data
-                for row_idx, row in enumerate(rows, 2):
-                    for col_idx, value in enumerate(row, 1):
+                for row_idx, record in enumerate(records, 2):
+                    for col_idx, col_name in enumerate(selected_columns, 1):
+                        value = record.data.get(col_name, '')
                         ws.cell(row=row_idx, column=col_idx, value=value)
 
                 # Save to bytes
@@ -864,21 +803,12 @@ class PublicDataPreviewView(APIView):
                     'error': 'Estrutura de colunas não disponível'
                 }, status=status.HTTP_400_BAD_REQUEST)
 
-            # Query all data from table
-            with connection.cursor() as cursor:
-                columns_str = ', '.join(columns)
-                query = f'SELECT {columns_str} FROM {safe_table_name}'
+            # Query all data using ORM
+            from .models import ImportedDataRecord
+            records = ImportedDataRecord.objects.filter(process=process)
 
-                cursor.execute(query)
-                rows = cursor.fetchall()
-
-                # Convert to list of dictionaries
-                data = []
-                for row in rows:
-                    row_dict = {}
-                    for i, col_name in enumerate(columns):
-                        row_dict[col_name] = row[i]
-                    data.append(row_dict)
+            # Convert to list of dictionaries
+            data = [record.data for record in records]
 
             return Response({
                 'success': True,
@@ -927,43 +857,52 @@ class PublicColumnMetadataView(APIView):
                 }, status=status.HTTP_400_BAD_REQUEST)
 
             # Build metadata for each column
+            from .models import ImportedDataRecord
             columns_metadata = []
 
-            with connection.cursor() as cursor:
-                for col_name, col_info in column_structure.items():
-                    col_type = col_info.get('type', 'string') if isinstance(col_info, dict) else str(col_info)
+            for col_name, col_info in column_structure.items():
+                col_type = col_info.get('type', 'string') if isinstance(col_info, dict) else str(col_info)
 
-                    # Determine filter type based on column type
-                    filter_type = 'string'
-                    if col_type in ['integer', 'int', 'bigint', 'smallint']:
-                        filter_type = 'integer'
-                    elif col_type in ['float', 'double', 'decimal', 'numeric', 'real']:
-                        filter_type = 'float'
-                    elif col_type in ['date']:
-                        filter_type = 'date'
-                    elif col_type in ['datetime', 'timestamp']:
-                        filter_type = 'datetime'
-                    elif col_type in ['boolean', 'bool']:
-                        filter_type = 'boolean'
+                # Determine filter type based on column type
+                filter_type = 'string'
+                if col_type in ['INTEGER', 'int', 'bigint', 'smallint']:
+                    filter_type = 'integer'
+                elif col_type in ['REAL', 'float', 'double', 'decimal', 'numeric']:
+                    filter_type = 'float'
+                elif col_type in ['date']:
+                    filter_type = 'date'
+                elif col_type in ['datetime', 'timestamp']:
+                    filter_type = 'datetime'
+                elif col_type in ['BOOLEAN', 'bool']:
+                    filter_type = 'boolean'
 
-                    # Get unique values for category filters (limit to 100)
-                    unique_values = []
-                    try:
-                        cursor.execute(f'SELECT DISTINCT {col_name} FROM {safe_table_name} WHERE {col_name} IS NOT NULL LIMIT 100')
-                        unique_values = [str(row[0]) for row in cursor.fetchall() if row[0] is not None]
+                # Get unique values for category filters (limit to 100)
+                unique_values = []
+                try:
+                    # Query unique values using Django JSONField
+                    records = ImportedDataRecord.objects.filter(process=process)
+                    unique_set = set()
+                    for record in records:
+                        value = record.data.get(col_name)
+                        if value is not None:
+                            unique_set.add(str(value))
+                            if len(unique_set) >= 100:
+                                break
 
-                        # If there are few unique values, treat as category
-                        if len(unique_values) <= 20 and filter_type == 'string':
-                            filter_type = 'category'
-                    except Exception as e:
-                        print(f"Error getting unique values for {col_name}: {e}")
+                    unique_values = sorted(list(unique_set))[:100]
 
-                    columns_metadata.append({
-                        'name': col_name,
-                        'type': col_type,
-                        'filter_type': filter_type,
-                        'unique_values': unique_values if filter_type == 'category' else []
-                    })
+                    # If there are few unique values, treat as category
+                    if len(unique_values) <= 20 and filter_type == 'string':
+                        filter_type = 'category'
+                except Exception as e:
+                    print(f"Error getting unique values for {col_name}: {e}")
+
+                columns_metadata.append({
+                    'name': col_name,
+                    'type': col_type,
+                    'filter_type': filter_type,
+                    'unique_values': unique_values if filter_type == 'category' else []
+                })
 
             return Response({
                 'success': True,
@@ -1089,4 +1028,58 @@ class DashboardStatsView(APIView):
             return Response({
                 'success': False,
                 'error': f'Erro ao buscar estatísticas: {str(e)}'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class ReanalyzeColumnTypesView(APIView):
+    """
+    View to re-analyze column types for an existing dataset
+    POST /api/data-import/reanalyze-types/<id>/
+    """
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, pk):
+        """
+        Re-analyze column types for a dataset
+        """
+        try:
+            process = DataImportProcess.objects.get(pk=pk, created_by=request.user)
+
+            # Get all records for this process
+            from .models import ImportedDataRecord
+            records = ImportedDataRecord.objects.filter(process=process)
+
+            if not records.exists():
+                return Response({
+                    'success': False,
+                    'error': 'Nenhum registro encontrado para este dataset'
+                }, status=status.HTTP_400_BAD_REQUEST)
+
+            # Convert records to list of dicts
+            data = [record.data for record in records]
+
+            # Re-analyze column structure with improved type detection
+            new_column_structure = DataImportService.analyze_column_structure(data)
+
+            # Update process with new column structure
+            process.column_structure = new_column_structure
+            process.save()
+
+            return Response({
+                'success': True,
+                'message': 'Tipos de coluna re-analisados com sucesso',
+                'column_structure': new_column_structure
+            })
+
+        except DataImportProcess.DoesNotExist:
+            return Response({
+                'success': False,
+                'error': 'Processo não encontrado'
+            }, status=status.HTTP_404_NOT_FOUND)
+        except Exception as e:
+            import traceback
+            print(f"Error reanalyzing column types: {traceback.format_exc()}")
+            return Response({
+                'success': False,
+                'error': f'Erro ao re-analisar tipos: {str(e)}'
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

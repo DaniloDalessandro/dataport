@@ -32,21 +32,19 @@ class UserSerializer(serializers.ModelSerializer):
         read_only_fields = ['created_at', 'updated_at', 'must_change_password']
 
     def create(self, validated_data):
-        # Gera senha temporária
-        temporary_password = User.generate_temporary_password()
+        """Create user using UserService layer"""
+        from .services import UserService
 
-        user = User.objects.create_user(
-            **validated_data,
-            password=temporary_password,
-            must_change_password=True
+        # Extract username and email from validated data
+        username = validated_data.pop('username')
+        email = validated_data.pop('email')
+
+        # Use service layer to create user with temporary password
+        user, _ = UserService.create_user_with_temporary_password(
+            username=username,
+            email=email,
+            **validated_data
         )
-
-        # Gera token de redefinição
-        reset_token = user.generate_reset_token()
-
-        # Envia email
-        from .services import EmailService
-        EmailService.send_temporary_password(user, temporary_password, reset_token)
 
         return user
 
@@ -89,23 +87,22 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
             del self.fields['username']
 
     def validate(self, attrs):
-        # Get email from request
+        """Validate credentials using UserService layer"""
+        from .services import UserService
+
+        # Get email and password from request
         email = attrs.get('email')
         password = attrs.get('password')
 
         if email and password:
-            try:
-                # Find user by email
-                user = User.objects.get(email=email, is_active=True)
-                # Check password
-                if not user.check_password(password):
-                    raise serializers.ValidationError({'non_field_errors': ['Credenciais inválidas.']})
+            # Use service layer to validate credentials
+            is_valid, user, error_message = UserService.validate_user_credentials(email, password)
 
-                # Add username to attrs for parent validation
-                attrs[self.username_field] = user.username
+            if not is_valid:
+                raise serializers.ValidationError({'non_field_errors': [error_message]})
 
-            except User.DoesNotExist:
-                raise serializers.ValidationError({'non_field_errors': ['Credenciais inválidas.']})
+            # Add username to attrs for parent validation
+            attrs[self.username_field] = user.username
 
         # Call parent validation
         data = super().validate(attrs)

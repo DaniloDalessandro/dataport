@@ -26,7 +26,7 @@ export function useDataOperators() {
   const [totalCount, setTotalCount] = useState(0)
   const [isLoading, setIsLoading] = useState(true)
 
-  const fetchDataOperators = async (params?: { page?: number; pageSize?: number; filters?: Record<string, any> }) => {
+  const fetchDataOperators = async (params?: { page?: number; pageSize?: number; filters?: Record<string, unknown> }) => {
     setIsLoading(true)
     try {
       // TODO: Implement API call

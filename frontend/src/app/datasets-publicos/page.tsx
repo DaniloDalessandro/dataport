@@ -41,7 +41,7 @@ interface SearchResult {
   process_id: number
   table_name: string
   columns: string[]
-  data: any[]
+  data: Record<string, string | number | boolean>[]
   count: number
 }
 
@@ -51,8 +51,14 @@ interface PublicDataset {
   status: string
   status_display: string
   record_count: number
-  column_structure: Record<string, any>
+  column_structure: Record<string, unknown>
   created_at: string
+}
+
+interface PublicDataResponse {
+  success: boolean;
+  data: Record<string, string | number | boolean>[];
+  // Add other properties if they exist in the response
 }
 
 export default function DatasetsPublicosPage() {
@@ -66,7 +72,7 @@ export default function DatasetsPublicosPage() {
   const [downloadFormat, setDownloadFormat] = useState<string>("csv")
   const [columnMetadata, setColumnMetadata] = useState<ColumnMetadata[]>([])
   const [activeFilters, setActiveFilters] = useState<Record<string, FilterValue>>({})
-  const [filteredData, setFilteredData] = useState<any[]>([])
+  const [filteredData, setFilteredData] = useState<Record<string, string | number | boolean>[]>([])
 
   // Fetch public datasets on mount
   useEffect(() => {
@@ -118,7 +124,7 @@ export default function DatasetsPublicosPage() {
       )
 
       if (dataResponse.ok) {
-        const data = await dataResponse.json()
+        const data: PublicDataResponse = await dataResponse.json()
         if (data.success && data.data) {
           setFilteredData(data.data)
         }
@@ -176,26 +182,98 @@ export default function DatasetsPublicosPage() {
     }
   }
 
-  const applyFilters = (data: any[]) => {
+  const applyFilters = (data: Record<string, string | number | boolean>[]) => {
+    if (Object.keys(activeFilters).length === 0) return data
+
     return data.filter(row => {
-      return Object.entries(activeFilters).every(([columnName, filterValue]) => {
+      return Object.entries(activeFilters).every(([columnName, filter]) => {
+        if (!filter) return true
+
         const cellValue = row[columnName]
+        const strValue = cellValue !== null && cellValue !== undefined ? String(cellValue).toLowerCase() : ""
 
-        if (!filterValue || (Array.isArray(filterValue) && filterValue.length === 0)) {
-          return true
-        }
+        switch (filter.type) {
+          case "string":
+            const filterVal = ((filter.value as string) || "").toLowerCase()
+            if (!filterVal) return true
 
-        if (Array.isArray(filterValue)) {
-          return filterValue.some(val => {
-            if (typeof val === 'string' && val.includes('*')) {
-              const regex = new RegExp('^' + val.replace(/\*/g, '.*') + '$', 'i')
-              return regex.test(String(cellValue))
+            switch (filter.operator) {
+              case "contains":
+                return strValue.includes(filterVal)
+              case "equals":
+                return strValue === filterVal
+              case "startsWith":
+                return strValue.startsWith(filterVal)
+              case "endsWith":
+                return strValue.endsWith(filterVal)
+              default:
+                return true
             }
-            return String(cellValue).toLowerCase() === String(val).toLowerCase()
-          })
-        }
 
-        return String(cellValue).toLowerCase().includes(String(filterValue).toLowerCase())
+          case "number":
+          case "integer":
+          case "float":
+            const numValue = parseFloat(String(cellValue))
+            const numFilter = parseFloat(filter.value as string)
+
+            if (isNaN(numFilter)) return true
+
+            switch (filter.operator) {
+              case "equals":
+                return numValue === numFilter
+              case "notEquals":
+                return numValue !== numFilter
+              case "greaterThan":
+                return numValue > numFilter
+              case "lessThan":
+                return numValue < numFilter
+              case "greaterThanOrEqual":
+                return numValue >= numFilter
+              case "lessThanOrEqual":
+                return numValue <= numFilter
+              case "between":
+                const numFilter2 = parseFloat(filter.value2 || "")
+                return !isNaN(numFilter2) && numValue >= numFilter && numValue <= numFilter2
+              default:
+                return true
+            }
+
+          case "boolean":
+            if (filter.value === "all") return true
+            const boolValue = String(cellValue).toLowerCase()
+            return boolValue === filter.value
+
+          case "category":
+            const selectedValues = filter.value as string[]
+            if (!selectedValues || selectedValues.length === 0) return true
+            return selectedValues.some(val =>
+              String(cellValue).toLowerCase() === val.toLowerCase()
+            )
+
+          case "date":
+          case "datetime":
+            const dateValue = new Date(String(cellValue))
+            const filterDate = new Date(filter.value as string)
+
+            if (isNaN(filterDate.getTime())) return true
+
+            switch (filter.operator) {
+              case "equals":
+                return dateValue.toDateString() === filterDate.toDateString()
+              case "before":
+                return dateValue < filterDate
+              case "after":
+                return dateValue > filterDate
+              case "between":
+                const filterDate2 = new Date(filter.value2 || "")
+                return !isNaN(filterDate2.getTime()) && dateValue >= filterDate && dateValue <= filterDate2
+              default:
+                return true
+            }
+
+          default:
+            return true
+        }
       })
     })
   }
@@ -375,14 +453,24 @@ export default function DatasetsPublicosPage() {
                                     <span>{column.name}</span>
                                   </div>
                                   <ColumnFilterPopover
-                                    column={column}
+                                    column={column.name}
+                                    columnType={column.filter_type}
+                                    uniqueValues={column.unique_values}
                                     value={activeFilters[column.name]}
                                     onChange={(value) => {
-                                      setActiveFilters(prev => ({
-                                        ...prev,
-                                        [column.name]: value
-                                      }))
+                                      setActiveFilters(prev => {
+                                        if (value === null) {
+                                          const newFilters = { ...prev }
+                                          delete newFilters[column.name]
+                                          return newFilters
+                                        }
+                                        return {
+                                          ...prev,
+                                          [column.name]: value
+                                        }
+                                      })
                                     }}
+                                    isActive={!!activeFilters[column.name]}
                                   />
                                 </div>
                               </TableHead>

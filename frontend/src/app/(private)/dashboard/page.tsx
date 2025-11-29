@@ -324,7 +324,7 @@ export default function DashboardPage() {
                 padding: '12px 16px',
                 boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)'
               }}
-              formatter={(value: any) => [`${value} GB`, 'Volume Total']}
+              formatter={(value: number, _name: string) => [`${value} GB`, 'Volume Total']}
             />
             <Area
               type="monotone"
@@ -374,7 +374,7 @@ export default function DashboardPage() {
                 padding: '12px 16px',
                 boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)'
               }}
-              formatter={(value: any, name: any) => [`${value} datasets`, name]}
+              formatter={(value: number, name: string) => [`${value} datasets`, name]}
             />
           </PieChart>
         </ChartCard>

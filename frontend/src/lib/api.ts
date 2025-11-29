@@ -82,7 +82,7 @@ export async function apiRequest(
   return response
 }
 
-export async function apiGet(endpoint: string): Promise<any> {
+export async function apiGet(endpoint: string): Promise<unknown> {
   const response = await apiRequest(endpoint, { method: "GET" })
 
   if (!response.ok) {
@@ -93,7 +93,7 @@ export async function apiGet(endpoint: string): Promise<any> {
   return response.json()
 }
 
-export async function apiPost(endpoint: string, data: any): Promise<any> {
+export async function apiPost(endpoint: string, data: unknown): Promise<unknown> {
   const response = await apiRequest(endpoint, {
     method: "POST",
     body: JSON.stringify(data),
@@ -107,7 +107,7 @@ export async function apiPost(endpoint: string, data: any): Promise<any> {
   return response.json()
 }
 
-export async function apiDelete(endpoint: string): Promise<any> {
+export async function apiDelete(endpoint: string): Promise<unknown> {
   const response = await apiRequest(endpoint, {
     method: "DELETE",
   })

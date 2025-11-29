@@ -8,3 +8,16 @@ sqlparse==0.5.3
 tzdata==2025.2
 pandas
 openpyxl
+google-generativeai
+python-dateutil==2.8.2
+
+# Cache e Performance
+redis==5.0.1
+django-redis==5.4.0
+
+# Processamento Assíncrono
+celery==5.3.6
+celery[redis]==5.3.6
+
+# Rate Limiting
+django-ratelimit==4.1.0

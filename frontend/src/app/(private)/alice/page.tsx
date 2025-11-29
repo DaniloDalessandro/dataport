@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useRef, useEffect } from "react"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { ScrollArea } from "@/components/ui/scroll-area"
@@ -24,63 +24,36 @@ interface Message {
   timestamp: Date
 }
 
-// Simulated responses based on dataset context
-const getAliceResponse = (question: string): string => {
-  const lowerQuestion = question.toLowerCase()
+// Call Alice API endpoint
+const callAliceAPI = async (message: string): Promise<string> => {
+  try {
+    const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
+    const token = localStorage.getItem('access_token')
 
-  // Dataset overview questions
-  if (lowerQuestion.includes("quantos datasets") || lowerQuestion.includes("total de datasets")) {
-    return "Temos **68 datasets no total** no sistema. Destes, **45 estão ativos** e em uso regular, 12 foram arquivados, 8 estão em processamento e 3 estão pendentes de validação."
+    const response = await fetch(`${API_BASE_URL}/api/data-import/alice/chat/`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify({ message })
+    })
+
+    const data = await response.json()
+
+    if (!response.ok) {
+      throw new Error(data.error || 'Erro ao processar pergunta')
+    }
+
+    if (data.success) {
+      return data.response
+    } else {
+      throw new Error(data.error || 'Erro desconhecido')
+    }
+  } catch (error) {
+    console.error('Error calling Alice API:', error)
+    return `Desculpe, ocorreu um erro ao processar sua pergunta. ${error instanceof Error ? error.message : 'Tente novamente.'}`
   }
-
-  if (lowerQuestion.includes("armazenamento") || lowerQuestion.includes("espaço")) {
-    return "O sistema está utilizando **18,75 TB** de armazenamento, o que representa 78% do total disponível. Recomendo monitorar este uso, pois estamos nos aproximando do limite de capacidade."
-  }
-
-  if (lowerQuestion.includes("registros") || lowerQuestion.includes("dados totais")) {
-    return "Temos um total de **2,4 milhões de registros** distribuídos entre todos os datasets. Este número representa um crescimento de 8% em relação ao mês anterior."
-  }
-
-  // Growth and trends
-  if (lowerQuestion.includes("crescimento") || lowerQuestion.includes("evolução")) {
-    return "O sistema apresenta um **crescimento de 12%** no último mês. O volume de dados tem aumentado consistentemente, especialmente nos datasets relacionados a transações e logs de sistema."
-  }
-
-  if (lowerQuestion.includes("tendência") || lowerQuestion.includes("trend")) {
-    return "A tendência atual mostra um crescimento estável no volume de dados. Os últimos 6 meses apresentaram aumento médio de **315K GB por mês**. Junho foi o mês com maior volume (420K GB)."
-  }
-
-  // Dataset status
-  if (lowerQuestion.includes("status") || lowerQuestion.includes("estado")) {
-    return "Dos 68 datasets:\n- **45 (66%)** estão ativos e em uso regular\n- **12 (18%)** foram arquivados\n- **8 (12%)** estão sendo processados\n- **3 (4%)** estão pendentes de validação"
-  }
-
-  if (lowerQuestion.includes("processamento") || lowerQuestion.includes("processando")) {
-    return "Há **8 datasets em processamento** no momento. O tempo médio de processamento é de 2-4 horas dependendo do tamanho do arquivo. Você pode acompanhar o status na página de Datasets."
-  }
-
-  // Data quality
-  if (lowerQuestion.includes("qualidade") || lowerQuestion.includes("quality")) {
-    return "A qualidade geral dos dados está em **bom nível**. A maioria dos datasets ativos passa por validação automática e apresenta consistência acima de 95%. Datasets com problemas são sinalizados automaticamente."
-  }
-
-  // Monthly data
-  if (lowerQuestion.includes("mês") || lowerQuestion.includes("mensal") || lowerQuestion.includes("monthly")) {
-    return "**Dados mensais recentes:**\n- Janeiro: 245K GB (12 datasets)\n- Fevereiro: 280K GB (15 datasets)\n- Março: 320K GB (18 datasets)\n- Abril: 290K GB (14 datasets)\n- Maio: 350K GB (21 datasets)\n- Junho: 420K GB (25 datasets)"
-  }
-
-  // Help and capabilities
-  if (lowerQuestion.includes("ajuda") || lowerQuestion.includes("help") || lowerQuestion.includes("o que você faz") || lowerQuestion.includes("como funciona")) {
-    return "Olá! Sou a **Alice**, sua assistente virtual do DataPort. Posso ajudar você com:\n\n📊 **Análise de dados** - informações sobre datasets, volumes e estatísticas\n📈 **Tendências** - crescimento, evolução e padrões nos dados\n🔍 **Status** - situação atual dos datasets e processamentos\n💡 **Insights** - recomendações baseadas nos dados\n\nPergunte-me qualquer coisa sobre os datasets!"
-  }
-
-  // Recommendations
-  if (lowerQuestion.includes("recomendação") || lowerQuestion.includes("sugestão") || lowerQuestion.includes("recomenda")) {
-    return "**Recomendações baseadas nos dados atuais:**\n\n1. 📦 Considere arquivar datasets inativos há mais de 90 dias\n2. 💾 O armazenamento está em 78% - planeje expansão em breve\n3. ✅ Valide os 3 datasets pendentes para liberá-los para uso\n4. 📈 O crescimento está saudável - mantenha o monitoramento mensal"
-  }
-
-  // Default response
-  return `Entendi sua pergunta sobre "${question}". Com base nos dados disponíveis nos datasets, posso fornecer informações sobre:\n\n- Volume total de dados e armazenamento\n- Status e distribuição dos datasets\n- Tendências de crescimento\n- Qualidade dos dados\n\nPoderia reformular sua pergunta ou me perguntar sobre algum destes tópicos específicos?`
 }
 
 export default function AlicePage() {
@@ -102,7 +75,7 @@ export default function AlicePage() {
     }
   }, [messages, isTyping])
 
-  const handleSend = () => {
+  const handleSend = async () => {
     if (!input.trim()) return
 
     const userMessage: Message = {
@@ -112,13 +85,14 @@ export default function AlicePage() {
       timestamp: new Date()
     }
 
+    const messageText = input
     setMessages(prev => [...prev, userMessage])
     setInput("")
     setIsTyping(true)
 
-    // Simulate AI thinking time
-    setTimeout(() => {
-      const response = getAliceResponse(input)
+    // Call Alice API
+    try {
+      const response = await callAliceAPI(messageText)
       const assistantMessage: Message = {
         id: (Date.now() + 1).toString(),
         role: "assistant",
@@ -126,8 +100,17 @@ export default function AlicePage() {
         timestamp: new Date()
       }
       setMessages(prev => [...prev, assistantMessage])
+    } catch (error) {
+      const errorMessage: Message = {
+        id: (Date.now() + 1).toString(),
+        role: "assistant",
+        content: "Desculpe, ocorreu um erro ao processar sua pergunta. Tente novamente.",
+        timestamp: new Date()
+      }
+      setMessages(prev => [...prev, errorMessage])
+    } finally {
       setIsTyping(false)
-    }, 1000 + Math.random() * 1000)
+    }
   }
 
   const handleKeyPress = (e: React.KeyboardEvent) => {

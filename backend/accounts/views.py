@@ -16,7 +16,7 @@ from .serializers import (
     ChangePasswordSerializer,
     CustomTokenObtainPairSerializer
 )
-from .services import EmailService
+from .services import EmailService, UserService
 
 User = get_user_model()
 
@@ -34,82 +34,67 @@ class UserViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=['post'], permission_classes=[AllowAny])
     def request_password_reset(self, request):
-        """Solicita redefinição de senha"""
+        """Solicita redefinição de senha usando UserService layer"""
         serializer = PasswordResetRequestSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
         email = serializer.validated_data['email']
 
-        try:
-            user = User.objects.get(email=email)
-            reset_token = user.generate_reset_token()
-            EmailService.send_password_reset_email(user, reset_token)
-            return Response(
-                {'message': 'Email de redefinição enviado com sucesso.'},
-                status=status.HTTP_200_OK
-            )
-        except User.DoesNotExist:
-            # Por segurança, não revelar se o email existe
-            return Response(
-                {'message': 'Se o email existir, um link de redefinição será enviado.'},
-                status=status.HTTP_200_OK
-            )
+        # Use service layer to handle password reset request
+        UserService.request_password_reset(email)
+
+        # Always return same response for security (don't reveal if email exists)
+        return Response(
+            {'message': 'Se o email existir, um link de redefinição será enviado.'},
+            status=status.HTTP_200_OK
+        )
 
     @action(detail=False, methods=['post'], permission_classes=[AllowAny])
     def reset_password(self, request):
-        """Redefine a senha usando o token"""
+        """Redefine a senha usando o token via UserService layer"""
         serializer = PasswordResetConfirmSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
         token = serializer.validated_data['token']
         new_password = serializer.validated_data['new_password']
 
-        try:
-            user = User.objects.get(
-                reset_password_token=token,
-                reset_password_token_expires__gt=timezone.now()
-            )
+        # Use service layer to reset password
+        success, error_message, user = UserService.reset_password_with_token(token, new_password)
 
-            user.set_password(new_password)
-            user.reset_password_token = None
-            user.reset_password_token_expires = None
-            user.must_change_password = False
-            user.save()
-
+        if success:
             return Response(
                 {'message': 'Senha redefinida com sucesso.'},
                 status=status.HTTP_200_OK
             )
-        except User.DoesNotExist:
+        else:
             return Response(
-                {'error': 'Token inválido ou expirado.'},
+                {'error': error_message},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
     @action(detail=False, methods=['post'], permission_classes=[IsAuthenticated])
     def change_password(self, request):
-        """Altera a senha do usuário autenticado"""
+        """Altera a senha do usuário autenticado via UserService layer"""
         serializer = ChangePasswordSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
         user = request.user
+        old_password = serializer.validated_data['old_password']
+        new_password = serializer.validated_data['new_password']
 
-        # Verifica a senha antiga
-        if not user.check_password(serializer.validated_data['old_password']):
+        # Use service layer to change password
+        success, error_message = UserService.change_password(user, old_password, new_password)
+
+        if success:
             return Response(
-                {'error': 'Senha antiga incorreta.'},
+                {'message': 'Senha alterada com sucesso.'},
+                status=status.HTTP_200_OK
+            )
+        else:
+            return Response(
+                {'error': error_message},
                 status=status.HTTP_400_BAD_REQUEST
             )
-
-        # Define a nova senha
-        user.set_password(serializer.validated_data['new_password'])
-        user.must_change_password = False
-        user.save()
-
-        return Response(
-            {'message': 'Senha alterada com sucesso.'},
-            status=status.HTTP_200_OK
-        )
 
     @action(detail=False, methods=['get'], permission_classes=[IsAuthenticated])
     def me(self, request):

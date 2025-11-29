@@ -63,7 +63,7 @@ class DataImportRequestSerializer(serializers.Serializer):
 
     def validate_table_name(self, value):
         """
-        Validate table name to prevent SQL injection
+        Validate table name to prevent SQL injection and duplicates
         """
         # Remove caracteres especiais e espacos
         cleaned = ''.join(c for c in value if c.isalnum() or c == '_')
@@ -76,7 +76,15 @@ class DataImportRequestSerializer(serializers.Serializer):
             raise serializers.ValidationError(
                 'Nome da tabela nao pode comecar com numero'
             )
-        return cleaned.lower()
+
+        # Verificar se ja existe um dataset com esse nome
+        cleaned_lower = cleaned.lower()
+        if DataImportProcess.objects.filter(table_name=cleaned_lower).exists():
+            raise serializers.ValidationError(
+                f'Já existe um dataset com o nome "{cleaned_lower}". Por favor, escolha outro nome.'
+            )
+
+        return cleaned_lower
 
 
 class DataImportProcessSerializer(serializers.ModelSerializer):

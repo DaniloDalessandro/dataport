@@ -15,6 +15,7 @@ class DataImportProcess(models.Model):
 
     table_name = models.CharField(
         max_length=255,
+        unique=True,
         verbose_name='Nome da Tabela',
         help_text='Nome da tabela criada no banco de dados'
     )
@@ -68,3 +69,55 @@ class DataImportProcess(models.Model):
 
     def __str__(self):
         return f"{self.table_name} - {self.get_status_display()}"
+
+
+class ImportedDataRecord(models.Model):
+    """
+    Model to store imported data records using JSONField
+    This replaces the anti-pattern of creating dynamic tables
+    """
+    process = models.ForeignKey(
+        DataImportProcess,
+        on_delete=models.CASCADE,
+        related_name='records',
+        verbose_name='Processo de Importação'
+    )
+    data = models.JSONField(
+        verbose_name='Dados',
+        help_text='Dados do registro em formato JSON'
+    )
+    row_hash = models.CharField(
+        max_length=64,
+        db_index=True,
+        verbose_name='Hash do Registro',
+        help_text='Hash MD5 dos dados para detecção de duplicatas'
+    )
+    created_at = models.DateTimeField(
+        auto_now_add=True,
+        verbose_name='Data de Criação'
+    )
+
+    class Meta:
+        verbose_name = 'Registro Importado'
+        verbose_name_plural = 'Registros Importados'
+        ordering = ['created_at']
+        indexes = [
+            models.Index(fields=['process', 'row_hash']),
+            models.Index(fields=['process', 'created_at']),
+        ]
+        # Ensure no duplicate records per process
+        unique_together = [['process', 'row_hash']]
+
+    def __str__(self):
+        return f"Registro {self.id} - {self.process.table_name}"
+
+    @staticmethod
+    def generate_row_hash(data: dict) -> str:
+        """
+        Generate MD5 hash of data for duplicate detection
+        """
+        import hashlib
+        import json
+        # Sort keys to ensure consistent hashing
+        data_str = json.dumps(data, sort_keys=True, ensure_ascii=False)
+        return hashlib.md5(data_str.encode()).hexdigest()
