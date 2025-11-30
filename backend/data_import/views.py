@@ -3,17 +3,43 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.pagination import PageNumberPagination
-from django.views.decorators.csrf import csrf_exempt
-from django.utils.decorators import method_decorator
-from django.http import HttpResponse
+from django.http import HttpResponse, StreamingHttpResponse
 from django.db.models import Count, Sum, Q
 from django.db.models.functions import TruncMonth
+from django.utils.decorators import method_decorator
+from django.views.decorators.cache import cache_page
+from django_ratelimit.decorators import ratelimit
+from drf_spectacular.utils import extend_schema, extend_schema_view, OpenApiParameter, OpenApiExample
+from drf_spectacular.types import OpenApiTypes
 from .models import DataImportProcess
 from .serializers import DataImportRequestSerializer, DataImportProcessSerializer
 from .services import DataImportService
+from .permissions import IsDatasetOwnerOrReadOnly, IsDatasetOwner, CanDeleteDatasets
+from .cache import cache_view_result, invalidate_process_caches
 from datetime import datetime, timedelta
 import csv
 import io
+import logging
+import uuid
+
+logger = logging.getLogger(__name__)
+
+
+def log_error_safely(error: Exception, context: str = "") -> str:
+    """
+    Log error details server-side and return a safe error ID for client response.
+    Never exposes internal details to the client.
+    """
+    import traceback
+    error_id = str(uuid.uuid4())[:8]
+    error_details = traceback.format_exc()
+
+    logger.error(f"Error ID {error_id} - {context}")
+    logger.error(f"Error type: {type(error).__name__}")
+    logger.error(f"Error message: {str(error)}")
+    logger.error(f"Traceback:\n{error_details}")
+
+    return error_id
 
 
 class DataImportPagination(PageNumberPagination):
@@ -25,11 +51,37 @@ class DataImportPagination(PageNumberPagination):
     max_page_size = 100
 
 
-@method_decorator(csrf_exempt, name='dispatch')
+@extend_schema(
+    tags=['Data Import'],
+    summary='Importar dados de arquivo ou endpoint',
+    description='''
+    Importa dados de um arquivo (CSV, Excel) ou endpoint externo.
+
+    **Rate limit:** 10 imports por hora por usuário
+
+    **Formatos suportados:**
+    - CSV (.csv)
+    - Excel (.xlsx, .xls)
+    - Endpoint JSON (API externa)
+
+    **Limites:**
+    - Tamanho máximo: 50MB
+    - Linhas máximas: 100.000
+    - Colunas máximas: 100
+    ''',
+    request=DataImportRequestSerializer,
+    responses={
+        201: DataImportProcessSerializer,
+        400: OpenApiTypes.OBJECT,
+        500: OpenApiTypes.OBJECT,
+    },
+)
+@method_decorator(ratelimit(key='user', rate='10/h', method='POST'), name='post')
 class ImportDataView(APIView):
     """
     View para importar dados de um endpoint externo ou arquivo
     POST /api/data-import/
+    Rate limit: 10 imports per hour per user
 
     Supports both:
     - Endpoint URL import (JSON data from API)
@@ -93,6 +145,9 @@ class ImportDataView(APIView):
             )
             print(f"✅ Importação concluída com sucesso!")
 
+            # Invalidate related caches
+            invalidate_process_caches(process.id)
+
             # Return created process
             result_serializer = DataImportProcessSerializer(process)
 
@@ -109,36 +164,44 @@ class ImportDataView(APIView):
             )
 
         except Exception as e:
-            import traceback
-            error_traceback = traceback.format_exc()
-            print(f"\n{'='*60}")
-            print(f"❌ ERRO na importação:")
-            print(f"{'='*60}")
-            print(error_traceback)
-            print(f"{'='*60}\n")
+            error_id = log_error_safely(e, "Data import failed")
 
             # Create more user-friendly error messages
             error_message = str(e)
             if 'Erro ao ler arquivo' in error_message:
-                user_message = f"Não foi possível ler o arquivo. Verifique se está no formato correto (.xlsx, .xls ou .csv). Detalhes: {error_message}"
+                user_message = "Não foi possível ler o arquivo. Verifique se está no formato correto (.xlsx, .xls ou .csv)."
             elif 'Formato de arquivo não suportado' in error_message:
                 user_message = "Formato de arquivo não suportado. Use arquivos .xlsx, .xls ou .csv"
             elif 'arquivo está vazio' in error_message:
                 user_message = "O arquivo está vazio ou não contém dados válidos"
+            elif 'timeout' in error_message.lower():
+                user_message = 'O servidor de dados não respondeu a tempo. Tente novamente mais tarde.'
+            elif 'connection' in error_message.lower():
+                user_message = 'Não foi possível conectar ao servidor de dados. Verifique a URL.'
             else:
-                user_message = error_message
+                user_message = "Erro ao importar dados. Por favor, tente novamente."
 
             return Response(
                 {
                     'success': False,
                     'error': user_message,
                     'error_type': type(e).__name__,
-                    'traceback': error_traceback if request.user.is_superuser else None
+                    'error_id': error_id
                 },
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
 
+@extend_schema(
+    tags=['Data Import'],
+    summary='Listar todos os processos de importação',
+    description='Lista todos os processos de importação com paginação. Cache de 5 minutos.',
+    parameters=[
+        OpenApiParameter(name='page', type=int, description='Número da página'),
+        OpenApiParameter(name='page_size', type=int, description='Itens por página (max 100)'),
+    ],
+    responses={200: DataImportProcessSerializer(many=True)},
+)
 class ListProcessesView(APIView):
     """
     View para listar todos os processos de importação
@@ -148,9 +211,10 @@ class ListProcessesView(APIView):
 
     def get(self, request):
         """
-        List all import processes with pagination
+        List all import processes with pagination and optimized queries
         """
-        processes = DataImportProcess.objects.all()
+        # Use select_related to avoid N+1 queries when accessing created_by
+        processes = DataImportProcess.objects.select_related('created_by').all()
 
         # Paginação
         paginator = DataImportPagination()
@@ -190,7 +254,7 @@ class DeleteProcessView(APIView):
     View para deletar um processo e sua tabela
     DELETE /api/data-import/processes/<id>/delete/
     """
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, CanDeleteDatasets]
 
     def delete(self, request, pk):
         """
@@ -198,6 +262,9 @@ class DeleteProcessView(APIView):
         """
         try:
             process = DataImportProcess.objects.get(pk=pk)
+
+            # Check object-level permission
+            self.check_object_permissions(request, process)
             table_name = process.table_name
 
             # Delete all associated records using ORM (CASCADE will handle this automatically)
@@ -207,6 +274,9 @@ class DeleteProcessView(APIView):
 
             # Delete the process record (CASCADE will delete all ImportedDataRecord entries)
             process.delete()
+
+            # Invalidate related caches
+            invalidate_process_caches(pk)
 
             print(f"✅ Processo {table_name} e {record_count} registros deletados com sucesso")
 
@@ -230,13 +300,14 @@ class DeleteProcessView(APIView):
             )
 
 
-@method_decorator(csrf_exempt, name='dispatch')
+@method_decorator(ratelimit(key='user', rate='20/h', method='POST'), name='post')
 class AppendDataView(APIView):
     """
     View para adicionar mais dados a uma tabela existente
     POST /api/data-import/processes/<id>/append/
+    Rate limit: 20 appends per hour per user
     """
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsDatasetOwner]
 
     def post(self, request, pk):
         """
@@ -244,6 +315,9 @@ class AppendDataView(APIView):
         """
         try:
             process = DataImportProcess.objects.get(pk=pk)
+
+            # Check object-level permission
+            self.check_object_permissions(request, process)
 
             print(f"\n{'='*60}")
             print(f"📥 Adicionando dados à tabela: {process.table_name}")
@@ -292,6 +366,9 @@ class AppendDataView(APIView):
             process.record_count += insert_stats['inserted']
             process.save()
 
+            # Invalidate related caches
+            invalidate_process_caches(pk)
+
             print(f"✅ Importação concluída:")
             print(f"   - Inseridos: {insert_stats['inserted']}")
             print(f"   - Duplicatas ignoradas: {insert_stats['duplicates']}")
@@ -326,19 +403,13 @@ class AppendDataView(APIView):
                 status=status.HTTP_404_NOT_FOUND
             )
         except Exception as e:
-            import traceback
-            error_traceback = traceback.format_exc()
-            print(f"\n{'='*60}")
-            print(f"❌ ERRO ao adicionar dados:")
-            print(f"{'='*60}")
-            print(error_traceback)
-            print(f"{'='*60}\n")
+            error_id = log_error_safely(e, "Data append failed")
 
             return Response(
                 {
                     'success': False,
-                    'error': str(e),
-                    'traceback': error_traceback if request.user.is_superuser else None
+                    'error': 'Erro ao adicionar dados. Por favor, tente novamente.',
+                    'error_id': error_id
                 },
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
@@ -349,14 +420,18 @@ class ToggleStatusView(APIView):
     View para alternar o status de um processo entre ativo e inativo
     POST /api/data-import/processes/<id>/toggle-status/
     """
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsDatasetOwner]
 
     def post(self, request, pk):
         """
         Toggle process status between active and inactive
+        Only owner or superuser can toggle
         """
         try:
             process = DataImportProcess.objects.get(pk=pk)
+
+            # Check permission
+            self.check_object_permissions(request, process)
 
             # Toggle status
             if process.status == 'active':
@@ -367,6 +442,9 @@ class ToggleStatusView(APIView):
                 message = f'Processo {process.table_name} marcado como ativo'
 
             process.save()
+
+            # Invalidate related caches
+            invalidate_process_caches(pk)
 
             # Return updated process
             serializer = DataImportProcessSerializer(process)
@@ -517,16 +595,22 @@ class SearchDataView(APIView):
             )
 
 
+class Echo:
+    """An object that implements just the write method of the file-like interface for streaming."""
+    def write(self, value):
+        return value
+
+
 class DownloadDataView(APIView):
     """
-    View para baixar dados de uma tabela em CSV
+    View para baixar dados de uma tabela em CSV com streaming
     GET /api/data-import/processes/<id>/download/
     """
     permission_classes = [IsAuthenticated]
 
     def get(self, request, pk):
         """
-        Download table data as CSV using ORM
+        Download table data as CSV using streaming to avoid memory issues
         """
         try:
             process = DataImportProcess.objects.get(pk=pk)
@@ -540,23 +624,25 @@ class DownloadDataView(APIView):
                     status=status.HTTP_400_BAD_REQUEST
                 )
 
-            # Query all data using ORM
-            records = ImportedDataRecord.objects.filter(process=process)
+            def iter_csv_rows():
+                """Generator function to stream CSV rows"""
+                buffer = Echo()
+                writer = csv.writer(buffer)
 
-            # Create CSV
-            output = io.StringIO()
-            writer = csv.writer(output)
+                # Yield header
+                yield writer.writerow(columns)
 
-            # Write header
-            writer.writerow(columns)
+                # Stream records in batches to avoid loading all data in memory
+                records = ImportedDataRecord.objects.filter(process=process).iterator(chunk_size=1000)
+                for record in records:
+                    row = [record.data.get(col, '') for col in columns]
+                    yield writer.writerow(row)
 
-            # Write data
-            for record in records:
-                row = [record.data.get(col, '') for col in columns]
-                writer.writerow(row)
-
-            # Create HTTP response
-            response = HttpResponse(output.getvalue(), content_type='text/csv')
+            # Create streaming response
+            response = StreamingHttpResponse(
+                iter_csv_rows(),
+                content_type='text/csv'
+            )
             response['Content-Disposition'] = f'attachment; filename="{process.table_name}.csv"'
 
             return response
@@ -567,8 +653,12 @@ class DownloadDataView(APIView):
                 status=status.HTTP_404_NOT_FOUND
             )
         except Exception as e:
+            error_id = log_error_safely(e, "Download failed")
             return Response(
-                {'error': f'Erro ao baixar dados: {str(e)}'},
+                {
+                    'error': 'Erro ao baixar dados. Por favor, tente novamente.',
+                    'error_id': error_id
+                },
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
@@ -577,6 +667,7 @@ class PublicListDatasetsView(APIView):
     """
     Public view to list all active datasets (no authentication required)
     GET /api/data-import/public-datasets/
+    Cached for 10 minutes (public endpoint, less frequent updates)
     """
     permission_classes = [AllowAny]
 
@@ -585,8 +676,10 @@ class PublicListDatasetsView(APIView):
         List all active datasets
         """
         try:
-            # Get all active processes
-            active_processes = DataImportProcess.objects.filter(status='active').order_by('-created_at')
+            # Get all active processes with optimized queries
+            active_processes = DataImportProcess.objects.select_related('created_by').filter(
+                status='active'
+            ).order_by('-created_at')
 
             # Serialize the data
             serializer = DataImportProcessSerializer(active_processes, many=True)
@@ -603,10 +696,12 @@ class PublicListDatasetsView(APIView):
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
+@method_decorator(ratelimit(key='ip', rate='100/h', method='GET'), name='get')
 class PublicSearchDataView(APIView):
     """
     Public view to search data across all active tables (no authentication required)
     GET /api/data-import/public-search/?q=termo
+    Rate limit: 100 searches per hour per IP
     """
     permission_classes = [AllowAny]
 
@@ -676,24 +771,22 @@ class PublicSearchDataView(APIView):
             )
 
 
+@method_decorator(ratelimit(key='ip', rate='50/h', method='GET'), name='get')
 class PublicDownloadDataView(APIView):
     """
-    Public view to download table data (no authentication required)
+    Public view to download table data with streaming support (no authentication required)
     GET /api/data-import/public-download/<id>/?format=csv&columns=col1,col2
+    Rate limit: 50 downloads per hour per IP
     """
     permission_classes = [AllowAny]
 
     def get(self, request, pk):
         """
-        Download table data (public access)
-        Supports formats: csv, xlsx, xls
+        Download table data (public access) with memory-efficient streaming
+        Supports formats: csv, xlsx
         """
         try:
             process = DataImportProcess.objects.get(pk=pk, status='active')
-
-            from django.db import connection
-
-            safe_table_name = DataImportService.sanitize_column_name(process.table_name)
             all_columns = list(process.column_structure.keys())
 
             # Get selected columns from query params
@@ -714,46 +807,48 @@ class PublicDownloadDataView(APIView):
             if file_format not in ['csv', 'xlsx']:
                 file_format = 'csv'
 
-            # Query data using ORM
             from .models import ImportedDataRecord
-            records = ImportedDataRecord.objects.filter(process=process)
 
             if file_format == 'csv':
-                # Create CSV with proper line endings for Excel compatibility
-                output = io.StringIO(newline='')
-                writer = csv.writer(output, delimiter=';', quoting=csv.QUOTE_MINIMAL)
-                writer.writerow(selected_columns)
-                for record in records:
-                    row = [record.data.get(col, '') for col in selected_columns]
-                    writer.writerow(row)
+                def iter_csv_rows():
+                    """Generator function to stream CSV rows"""
+                    buffer = Echo()
+                    writer = csv.writer(buffer, delimiter=';', quoting=csv.QUOTE_MINIMAL)
 
-                # Convert to bytes with UTF-8 BOM for Excel compatibility
-                csv_content = output.getvalue()
-                response = HttpResponse(
-                    '\ufeff' + csv_content,  # UTF-8 BOM for Excel
+                    # Yield UTF-8 BOM for Excel compatibility
+                    yield '\ufeff'
+
+                    # Yield header
+                    yield writer.writerow(selected_columns)
+
+                    # Stream records in batches
+                    records = ImportedDataRecord.objects.filter(process=process).iterator(chunk_size=1000)
+                    for record in records:
+                        row = [record.data.get(col, '') for col in selected_columns]
+                        yield writer.writerow(row)
+
+                response = StreamingHttpResponse(
+                    iter_csv_rows(),
                     content_type='text/csv; charset=utf-8'
                 )
                 response['Content-Disposition'] = f'attachment; filename="{process.table_name}.csv"'
 
             else:
-                # Create Excel (xlsx or xls)
+                # For Excel, we need to use write-only mode for better memory efficiency
                 import openpyxl
-                from openpyxl.utils import get_column_letter
+                from openpyxl import Workbook
 
-                wb = openpyxl.Workbook()
-                ws = wb.active
-                ws.title = process.table_name[:31]  # Excel sheet name limit
+                wb = Workbook(write_only=True)
+                ws = wb.create_sheet(process.table_name[:31])
 
                 # Write header
-                for col_idx, col_name in enumerate(selected_columns, 1):
-                    cell = ws.cell(row=1, column=col_idx, value=col_name)
-                    cell.font = openpyxl.styles.Font(bold=True)
+                ws.append(selected_columns)
 
-                # Write data
-                for row_idx, record in enumerate(records, 2):
-                    for col_idx, col_name in enumerate(selected_columns, 1):
-                        value = record.data.get(col_name, '')
-                        ws.cell(row=row_idx, column=col_idx, value=value)
+                # Write data in batches using iterator
+                records = ImportedDataRecord.objects.filter(process=process).iterator(chunk_size=1000)
+                for record in records:
+                    row = [record.data.get(col, '') for col in selected_columns]
+                    ws.append(row)
 
                 # Save to bytes
                 output = io.BytesIO()
@@ -772,8 +867,12 @@ class PublicDownloadDataView(APIView):
                 status=status.HTTP_404_NOT_FOUND
             )
         except Exception as e:
+            error_id = log_error_safely(e, "Download failed")
             return Response(
-                {'error': f'Erro ao baixar dados: {str(e)}'},
+                {
+                    'error': 'Erro ao baixar dados. Por favor, tente novamente.',
+                    'error_id': error_id
+                },
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
@@ -923,6 +1022,21 @@ class PublicColumnMetadataView(APIView):
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
+@extend_schema(
+    tags=['Analytics'],
+    summary='Estatísticas do dashboard',
+    description='''
+    Retorna estatísticas agregadas para o dashboard.
+
+    **Inclui:**
+    - Status dos datasets (ativos, inativos, etc.)
+    - Total de registros importados
+    - Estimativa de armazenamento
+    - Dados mensais (últimos 6 meses)
+    - Datasets mais recentes
+    ''',
+    responses={200: OpenApiTypes.OBJECT},
+)
 class DashboardStatsView(APIView):
     """
     View para retornar estatísticas agregadas para o dashboard
@@ -1023,11 +1137,11 @@ class DashboardStatsView(APIView):
             })
 
         except Exception as e:
-            import traceback
-            print(f"Error in dashboard stats: {traceback.format_exc()}")
+            error_id = log_error_safely(e, "Dashboard stats failed")
             return Response({
                 'success': False,
-                'error': f'Erro ao buscar estatísticas: {str(e)}'
+                'error': 'Erro ao buscar estatísticas. Por favor, tente novamente.',
+                'error_id': error_id
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -1077,9 +1191,76 @@ class ReanalyzeColumnTypesView(APIView):
                 'error': 'Processo não encontrado'
             }, status=status.HTTP_404_NOT_FOUND)
         except Exception as e:
-            import traceback
-            print(f"Error reanalyzing column types: {traceback.format_exc()}")
+            error_id = log_error_safely(e, "Reanalyze column types failed")
             return Response({
                 'success': False,
-                'error': f'Erro ao re-analisar tipos: {str(e)}'
+                'error': 'Erro ao re-analisar tipos. Por favor, tente novamente.',
+                'error_id': error_id
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class TaskStatusView(APIView):
+    """
+    View para verificar o status de uma task assíncrona
+    GET /api/data-import/tasks/<task_id>/status/
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, task_id):
+        """
+        Get status of an async task
+        """
+        try:
+            from .models import AsyncTask
+
+            task = AsyncTask.objects.get(task_id=task_id)
+
+            # Check if user owns this task
+            if task.created_by != request.user and not request.user.is_superuser:
+                return Response(
+                    {'error': 'Você não tem permissão para acessar esta task'},
+                    status=status.HTTP_403_FORBIDDEN
+                )
+
+            # Prepare response
+            response_data = {
+                'task_id': task.task_id,
+                'task_name': task.task_name,
+                'status': task.status,
+                'status_display': task.get_status_display(),
+                'progress': task.progress,
+                'created_at': task.created_at,
+                'updated_at': task.updated_at,
+            }
+
+            # Add result if completed
+            if task.status == 'success':
+                response_data['result'] = task.result
+                response_data['completed_at'] = task.completed_at
+
+            # Add error if failed
+            if task.status == 'failed':
+                response_data['error'] = task.error
+
+            # Add process info if available
+            if task.process:
+                response_data['process'] = {
+                    'id': task.process.id,
+                    'table_name': task.process.table_name,
+                    'record_count': task.process.record_count,
+                    'status': task.process.status,
+                }
+
+            return Response(response_data)
+
+        except AsyncTask.DoesNotExist:
+            return Response(
+                {'error': 'Task não encontrada'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        except Exception as e:
+            error_id = log_error_safely(e, "Task status check failed")
+            return Response({
+                'error': 'Erro ao verificar status da task',
+                'error_id': error_id
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

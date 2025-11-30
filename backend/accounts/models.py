@@ -7,11 +7,11 @@ import secrets
 
 
 class Company(models.Model):
-    name = models.CharField('Nome', max_length=200)
-    cnpj = models.CharField('CNPJ', max_length=18, unique=True)
+    name = models.CharField('Nome', max_length=200, db_index=True)  # Indexed for name searches
+    cnpj = models.CharField('CNPJ', max_length=18, unique=True, db_index=True)  # Already unique, but explicit index
     email = models.EmailField('E-mail', blank=True, null=True)
     phone = models.CharField('Telefone', max_length=20, blank=True, null=True)
-    is_active = models.BooleanField('Ativa', default=True)
+    is_active = models.BooleanField('Ativa', default=True, db_index=True)  # Indexed for filtering active companies
     created_at = models.DateTimeField('Criado em', auto_now_add=True)
     updated_at = models.DateTimeField('Atualizado em', auto_now=True)
     created_by = models.ForeignKey(
@@ -51,6 +51,7 @@ class CustomUser(AbstractUser):
         max_length=10,
         choices=PROFILE_TYPE_CHOICES,
         default='interno',
+        db_index=True,  # Indexed for filtering by profile type
         help_text='Define se o usuário é interno ou externo à organização'
     )
     companies = models.ManyToManyField(
@@ -60,9 +61,9 @@ class CustomUser(AbstractUser):
         blank=True
     )
     phone = models.CharField('Telefone', max_length=20, blank=True, null=True)
-    cpf = models.CharField('CPF', max_length=14, unique=True, blank=True, null=True)
-    is_active = models.BooleanField('Ativo', default=True)
-    reset_password_token = models.CharField('Token de Redefinição', max_length=100, blank=True, null=True)
+    cpf = models.CharField('CPF', max_length=14, unique=True, blank=True, null=True, db_index=True)
+    is_active = models.BooleanField('Ativo', default=True, db_index=True)  # Indexed for filtering active users
+    reset_password_token = models.CharField('Token de Redefinição', max_length=100, blank=True, null=True, db_index=True)  # Indexed for password reset lookups
     reset_password_token_expires = models.DateTimeField('Token Expira em', blank=True, null=True)
     must_change_password = models.BooleanField('Deve alterar senha', default=False)
     created_at = models.DateTimeField('Criado em', auto_now_add=True)
@@ -88,6 +89,10 @@ class CustomUser(AbstractUser):
         verbose_name = 'Usuário'
         verbose_name_plural = 'Usuários'
         ordering = ['username']
+        indexes = [
+            models.Index(fields=['email'], name='user_email_idx'),
+            models.Index(fields=['is_active', 'profile_type'], name='user_active_profile_idx'),
+        ]
 
     def __str__(self):
         return f"{self.get_full_name() or self.username}"

@@ -49,6 +49,7 @@ INSTALLED_APPS = [
     # Third party apps
     'rest_framework',
     'corsheaders',
+    'drf_spectacular',
 
     #MY APPS
     'accounts',
@@ -67,6 +68,9 @@ MIDDLEWARE = [
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
+    # Custom middleware
+    'core.middleware.RequestIDMiddleware',
+    'core.middleware.APIVersionMiddleware',
 ]
 
 ROOT_URLCONF = 'core.urls'
@@ -201,6 +205,56 @@ REST_FRAMEWORK = {
     ],
     'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
     'PAGE_SIZE': 20,
+    # API Documentation
+    'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
+}
+
+# API Documentation Settings
+SPECTACULAR_SETTINGS = {
+    'TITLE': 'DataPort API',
+    'DESCRIPTION': '''
+    Sistema de gerenciamento e importação de dados com suporte a múltiplas fontes.
+
+    ## Recursos Principais
+    - 📊 Importação de dados (CSV, Excel, APIs)
+    - 🔍 Busca e filtragem avançada
+    - 📈 Dashboard com estatísticas
+    - 🤖 Processamento assíncrono com Celery
+    - 💾 Cache Redis para performance
+    - 🔐 Autenticação JWT
+
+    ## Versões da API
+    - **v1**: Versão atual (estável)
+    - URLs legadas sem prefixo de versão serão descontinuadas
+    ''',
+    'VERSION': '1.0.0',
+    'SERVE_INCLUDE_SCHEMA': False,
+    'SWAGGER_UI_SETTINGS': {
+        'deepLinking': True,
+        'persistAuthorization': True,
+        'displayOperationId': True,
+        'filter': True,
+    },
+    'COMPONENT_SPLIT_REQUEST': True,
+    'SORT_OPERATIONS': False,
+    'SERVERS': [
+        {
+            'url': 'http://localhost:8000',
+            'description': 'Development server'
+        },
+        {
+            'url': 'http://localhost:8000/api/v1',
+            'description': 'API v1 (recommended)'
+        },
+    ],
+    'TAGS': [
+        {'name': 'Authentication', 'description': 'Endpoints de autenticação e gerenciamento de usuários'},
+        {'name': 'Data Import', 'description': 'Importação e gerenciamento de datasets'},
+        {'name': 'Search & Filter', 'description': 'Busca e filtragem de dados'},
+        {'name': 'Analytics', 'description': 'Estatísticas e dashboards'},
+        {'name': 'Health', 'description': 'Health checks e monitoramento'},
+        {'name': 'Tasks', 'description': 'Gerenciamento de tasks assíncronas'},
+    ],
 }
 
 # Simple JWT Settings
@@ -252,3 +306,58 @@ CELERY_WORKER_PREFETCH_MULTIPLIER = 1  # One task at a time
 CELERY_WORKER_MAX_TASKS_PER_CHILD = 1000  # Restart worker after 1000 tasks
 CELERY_TASK_ACKS_LATE = True  # Acknowledge task after completion
 CELERY_TASK_REJECT_ON_WORKER_LOST = True  # Re-queue task if worker crashes
+
+# Structured Logging Configuration
+import os
+LOGS_DIR = BASE_DIR / 'logs'
+os.makedirs(LOGS_DIR, exist_ok=True)
+
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'formatters': {
+        'verbose': {
+            'format': '[{asctime}] {levelname} {name} {module}.{funcName}:{lineno} - {message}',
+            'style': '{',
+            'datefmt': '%Y-%m-%d %H:%M:%S',
+        },
+        'simple': {
+            'format': '{levelname} {message}',
+            'style': '{',
+        },
+    },
+    'handlers': {
+        'console': {
+            'class': 'logging.StreamHandler',
+            'formatter': 'verbose',
+        },
+        'file': {
+            'class': 'logging.handlers.RotatingFileHandler',
+            'filename': str(LOGS_DIR / 'dataport.log'),
+            'maxBytes': 10485760,  # 10MB
+            'backupCount': 5,
+            'formatter': 'verbose',
+        },
+    },
+    'loggers': {
+        'django': {
+            'handlers': ['console', 'file'],
+            'level': 'INFO',
+            'propagate': False,
+        },
+        'data_import': {
+            'handlers': ['console', 'file'],
+            'level': 'INFO',
+            'propagate': False,
+        },
+        'accounts': {
+            'handlers': ['console', 'file'],
+            'level': 'INFO',
+            'propagate': False,
+        },
+    },
+    'root': {
+        'handlers': ['console', 'file'],
+        'level': 'INFO',
+    },
+}

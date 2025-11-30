@@ -7,7 +7,7 @@ import pandas as pd
 from datetime import datetime
 from typing import Dict, List, Any, Tuple, Optional
 from django.core.files.uploadedfile import UploadedFile
-from django.db import connection
+from django.db import connection, transaction
 from .models import DataImportProcess
 
 logger = logging.getLogger(__name__)
@@ -179,6 +179,10 @@ class DataImportService:
         Process uploaded file and return data in the same format as endpoint data
         Returns: (data, column_structure)
         """
+        # Resource limits to prevent abuse
+        MAX_ROWS = 100000  # Maximum 100k rows
+        MAX_COLUMNS = 100  # Maximum 100 columns
+
         try:
             # Read file into DataFrame
             df = DataImportService.read_file_to_dataframe(file)
@@ -186,6 +190,25 @@ class DataImportService:
             # Check if DataFrame is empty
             if df.empty:
                 raise ValueError('O arquivo está vazio ou não contém dados válidos')
+
+            # Validate resource limits
+            row_count, col_count = df.shape
+
+            if row_count > MAX_ROWS:
+                raise ValueError(
+                    f'Arquivo contém {row_count:,} linhas. '
+                    f'Máximo permitido: {MAX_ROWS:,} linhas. '
+                    f'Por favor, divida o arquivo em partes menores.'
+                )
+
+            if col_count > MAX_COLUMNS:
+                raise ValueError(
+                    f'Arquivo contém {col_count} colunas. '
+                    f'Máximo permitido: {MAX_COLUMNS} colunas.'
+                )
+
+            # Log dataset size for monitoring
+            logger.info(f"Processing file with {row_count:,} rows and {col_count} columns")
 
             # Convert DataFrame to list of dictionaries
             data = DataImportService.dataframe_to_dict_list(df)
@@ -303,6 +326,29 @@ class DataImportService:
             if not data:
                 raise ValueError('Endpoint returned empty list')
 
+            # Resource limits to prevent abuse
+            MAX_ROWS = 100000  # Maximum 100k rows
+            MAX_COLUMNS = 100  # Maximum 100 columns
+
+            row_count = len(data)
+            if row_count > MAX_ROWS:
+                raise ValueError(
+                    f'Endpoint retornou {row_count:,} registros. '
+                    f'Máximo permitido: {MAX_ROWS:,} registros. '
+                    f'Por favor, use paginação ou filtre os dados no endpoint.'
+                )
+
+            # Check column count from first record
+            if data and isinstance(data[0], dict):
+                col_count = len(data[0].keys())
+                if col_count > MAX_COLUMNS:
+                    raise ValueError(
+                        f'Endpoint retornou {col_count} colunas. '
+                        f'Máximo permitido: {MAX_COLUMNS} colunas.'
+                    )
+
+            logger.info(f"Processing endpoint data with {row_count:,} rows")
+
             column_structure = DataImportService.analyze_column_structure(data)
 
             return data, column_structure
@@ -356,7 +402,7 @@ class DataImportService:
     @staticmethod
     def insert_data_orm(process, data: List[Dict], column_structure: Dict[str, Dict]) -> Dict[str, int]:
         """
-        Insert data using Django ORM (ImportedDataRecord model)
+        Insert data using Django ORM with bulk operations for performance.
         Returns: dictionary with statistics {
             'inserted': number of records inserted,
             'duplicates': number of duplicates skipped,
@@ -375,12 +421,19 @@ class DataImportService:
             for col_name, info in column_structure.items()
         }
 
-        records_inserted = 0
+        # Get existing hashes to detect duplicates
+        existing_hashes = set(
+            ImportedDataRecord.objects.filter(process=process)
+            .values_list('row_hash', flat=True)
+        )
+
+        records_to_create = []
         duplicates_skipped = 0
         errors = 0
 
         for item in data:
             if not isinstance(item, dict):
+                errors += 1
                 continue
 
             # Create normalized data dict with sanitized column names
@@ -391,30 +444,53 @@ class DataImportService:
                     normalized_data[safe_name] = value
 
             if not normalized_data:
+                errors += 1
                 continue
 
             try:
                 # Generate hash for duplicate detection
                 row_hash = ImportedDataRecord.generate_row_hash(normalized_data)
 
-                # Try to create record (will fail if duplicate due to unique_together constraint)
-                record, created = ImportedDataRecord.objects.get_or_create(
-                    process=process,
-                    row_hash=row_hash,
-                    defaults={'data': normalized_data}
-                )
-
-                if created:
-                    records_inserted += 1
-                else:
+                # Check if duplicate
+                if row_hash in existing_hashes:
                     duplicates_skipped += 1
                     logger.debug(f'Duplicate record skipped (hash: {row_hash})')
+                    continue
+
+                # Prepare record for bulk insert
+                records_to_create.append(ImportedDataRecord(
+                    process=process,
+                    row_hash=row_hash,
+                    data=normalized_data
+                ))
+
+                # Add to existing hashes to detect duplicates within the same batch
+                existing_hashes.add(row_hash)
 
             except Exception as e:
                 errors += 1
-                logger.error(f'Error processing record: {e}')
+                logger.error(f'Error preparing record: {e}')
                 logger.error(f'Data: {normalized_data}')
                 continue
+
+        # Bulk insert all records at once (1000 per batch)
+        records_inserted = 0
+        if records_to_create:
+            try:
+                BATCH_SIZE = 1000
+                for i in range(0, len(records_to_create), BATCH_SIZE):
+                    batch = records_to_create[i:i + BATCH_SIZE]
+                    ImportedDataRecord.objects.bulk_create(
+                        batch,
+                        ignore_conflicts=True  # Ignore any duplicate key errors
+                    )
+                    records_inserted += len(batch)
+                    logger.info(f"Inserted batch {i // BATCH_SIZE + 1}: {len(batch)} records")
+
+            except Exception as e:
+                logger.error(f'Bulk insert failed: {e}')
+                errors += len(records_to_create)
+                records_inserted = 0
 
         total = records_inserted + duplicates_skipped + errors
 
@@ -442,6 +518,7 @@ class DataImportService:
         return DataImportService.insert_data_orm(process, data, column_structure)
 
     @staticmethod
+    @transaction.atomic
     def import_data(
         table_name: str,
         user=None,
@@ -450,7 +527,8 @@ class DataImportService:
         import_type: str = 'endpoint'
     ) -> DataImportProcess:
         """
-        Main method to import data from an endpoint or file
+        Main method to import data from an endpoint or file with transaction safety.
+        If any step fails, all database changes are rolled back.
 
         Args:
             table_name: Name of the table to create

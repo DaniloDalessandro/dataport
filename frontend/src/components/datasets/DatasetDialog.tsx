@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/dialog"
 import { Label } from "@/components/ui/label"
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
+import { useToast } from "@/hooks/use-toast"
 
 interface DatasetDialogProps {
   isOpen: boolean
@@ -27,6 +28,7 @@ interface DatasetDialogProps {
 }
 
 export default function DatasetDialog({ isOpen, onClose, onSubmit }: DatasetDialogProps) {
+  const { toast } = useToast()
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [importType, setImportType] = useState<"endpoint" | "file">("endpoint")
   const [datasetName, setDatasetName] = useState("")
@@ -42,7 +44,11 @@ export default function DatasetDialog({ isOpen, onClose, onSubmit }: DatasetDial
       if (validExtensions.includes(fileExtension)) {
         setSelectedFile(file)
       } else {
-        alert('Por favor, selecione apenas arquivos XLS, XLSX ou CSV')
+        toast({
+          title: 'Formato inválido',
+          description: 'Por favor, selecione apenas arquivos XLS, XLSX ou CSV',
+          variant: 'destructive'
+        })
         event.target.value = ''
       }
     }

@@ -1,5 +1,6 @@
 from rest_framework import serializers
 from .models import DataImportProcess
+import os
 
 
 class DataImportRequestSerializer(serializers.Serializer):
@@ -51,15 +52,84 @@ class DataImportRequestSerializer(serializers.Serializer):
                 raise serializers.ValidationError({
                     'file': 'Arquivo é obrigatório quando o tipo é "file"'
                 })
-            # Validate file extension
-            allowed_extensions = ['.xlsx', '.xls', '.csv']
-            file_name = file.name.lower()
-            if not any(file_name.endswith(ext) for ext in allowed_extensions):
-                raise serializers.ValidationError({
-                    'file': f'Formato de arquivo não suportado. Use: {", ".join(allowed_extensions)}'
-                })
+
+            # Robust file validation
+            self._validate_file_upload(file)
 
         return data
+
+    def _validate_file_upload(self, file):
+        """
+        Comprehensive file upload validation
+        """
+        # 1. File size validation (max 50MB)
+        MAX_FILE_SIZE = 50 * 1024 * 1024  # 50 MB
+        if file.size > MAX_FILE_SIZE:
+            raise serializers.ValidationError({
+                'file': f'Arquivo muito grande. Tamanho máximo: {MAX_FILE_SIZE // (1024*1024)}MB'
+            })
+
+        # 2. Filename sanitization - prevent path traversal
+        filename = os.path.basename(file.name)
+        if '..' in filename or '/' in filename or '\\' in filename:
+            raise serializers.ValidationError({
+                'file': 'Nome de arquivo inválido'
+            })
+
+        # 3. Extension validation
+        allowed_extensions = ['.xlsx', '.xls', '.csv']
+        file_name_lower = filename.lower()
+        if not any(file_name_lower.endswith(ext) for ext in allowed_extensions):
+            raise serializers.ValidationError({
+                'file': f'Formato de arquivo não suportado. Use: {", ".join(allowed_extensions)}'
+            })
+
+        # 4. Basic file header validation (magic bytes)
+        file.seek(0)
+        file_header = file.read(8)
+        file.seek(0)
+
+        # Check for common file signatures
+        is_valid = False
+        if file_name_lower.endswith('.xlsx'):
+            # XLSX files start with PK (ZIP signature)
+            is_valid = file_header[:2] == b'PK'
+        elif file_name_lower.endswith('.xls'):
+            # XLS files start with specific signature
+            is_valid = file_header[:8] in [b'\xD0\xCF\x11\xA0\xA1\xB1\x1A\xE1', b'\x09\x08\x10\x00\x00\x06\x05\x00']
+        elif file_name_lower.endswith('.csv'):
+            # CSV is plain text, just check if readable
+            is_valid = True
+
+        if not is_valid and not file_name_lower.endswith('.csv'):
+            raise serializers.ValidationError({
+                'file': 'Arquivo não corresponde ao formato declarado na extensão'
+            })
+
+        # 5. Additional content validation for CSV
+        if file_name_lower.endswith('.csv'):
+            file.seek(0)
+            try:
+                # Try to read first line as CSV to validate format
+                import csv
+                first_chunk = file.read(8192).decode('utf-8', errors='ignore')
+                file.seek(0)
+
+                # Check if it looks like CSV
+                sniffer = csv.Sniffer()
+                try:
+                    sniffer.sniff(first_chunk)
+                except csv.Error:
+                    raise serializers.ValidationError({
+                        'file': 'Arquivo CSV inválido ou corrompido'
+                    })
+            except Exception as e:
+                raise serializers.ValidationError({
+                    'file': 'Não foi possível validar o arquivo CSV'
+                })
+
+        # 6. Reset file pointer after all validations
+        file.seek(0)
 
     def validate_table_name(self, value):
         """

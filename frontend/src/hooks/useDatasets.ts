@@ -83,7 +83,13 @@ export function useDatasets() {
 
         try {
           const errorJson = JSON.parse(errorText)
-          errorMessage = errorJson.error || errorJson.details?.table_name?.[0] || errorJson.detail || errorMessage
+          // Priorizar mensagem específica de validação antes da mensagem genérica
+          errorMessage = errorJson.details?.table_name?.[0] ||
+                        errorJson.details?.endpoint_url?.[0] ||
+                        errorJson.details?.file?.[0] ||
+                        errorJson.error ||
+                        errorJson.detail ||
+                        errorMessage
         } catch {
           // Se não for JSON, usar a mensagem padrão
           console.error('Error response:', errorText)

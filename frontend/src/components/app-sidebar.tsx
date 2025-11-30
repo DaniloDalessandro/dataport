@@ -42,6 +42,7 @@ const data = {
       title: "Site",
       url: "/site-publico",
       icon: Globe,
+      openInNewTab: true,
     },
     {
       title: "Ajuda",

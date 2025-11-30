@@ -3,7 +3,7 @@ from .views import (
     ImportDataView, ListProcessesView, ProcessDetailView, DeleteProcessView,
     AppendDataView, ToggleStatusView, DataPreviewView, SearchDataView, DownloadDataView,
     PublicSearchDataView, PublicDownloadDataView, PublicListDatasetsView, PublicDataPreviewView,
-    PublicColumnMetadataView, DashboardStatsView, ReanalyzeColumnTypesView
+    PublicColumnMetadataView, DashboardStatsView, ReanalyzeColumnTypesView, TaskStatusView
 )
 from .views_alice import AliceChatView
 
@@ -21,6 +21,8 @@ urlpatterns = [
     path('processes/<int:pk>/download/', DownloadDataView.as_view(), name='download-data'),
     path('dashboard-stats/', DashboardStatsView.as_view(), name='dashboard-stats'),
     path('processes/<int:pk>/reanalyze-types/', ReanalyzeColumnTypesView.as_view(), name='reanalyze-types'),
+    # Async task status
+    path('tasks/<str:task_id>/status/', TaskStatusView.as_view(), name='task-status'),
     # Alice AI Assistant
     path('alice/chat/', AliceChatView.as_view(), name='alice-chat'),
     # Public endpoints (no authentication required)

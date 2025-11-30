@@ -16,6 +16,7 @@ class DataImportProcess(models.Model):
     table_name = models.CharField(
         max_length=255,
         unique=True,
+        db_index=True,  # Already unique, but explicit index for searches
         verbose_name='Nome da Tabela',
         help_text='Nome da tabela criada no banco de dados'
     )
@@ -28,6 +29,7 @@ class DataImportProcess(models.Model):
         max_length=20,
         choices=STATUS_CHOICES,
         default='active',
+        db_index=True,  # Indexed for filtering by status
         verbose_name='Status'
     )
     record_count = models.IntegerField(
@@ -66,6 +68,10 @@ class DataImportProcess(models.Model):
         verbose_name = 'Processo de Importação'
         verbose_name_plural = 'Processos de Importação'
         ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['status', 'created_at'], name='process_status_created_idx'),
+            models.Index(fields=['created_by', 'status'], name='process_user_status_idx'),
+        ]
 
     def __str__(self):
         return f"{self.table_name} - {self.get_status_display()}"
@@ -121,3 +127,92 @@ class ImportedDataRecord(models.Model):
         # Sort keys to ensure consistent hashing
         data_str = json.dumps(data, sort_keys=True, ensure_ascii=False)
         return hashlib.md5(data_str.encode()).hexdigest()
+
+
+class AsyncTask(models.Model):
+    """
+    Model to track async Celery task status
+    """
+    TASK_STATUS_CHOICES = [
+        ('pending', 'Pendente'),
+        ('started', 'Iniciado'),
+        ('progress', 'Em Progresso'),
+        ('success', 'Conclu\u00eddo com Sucesso'),
+        ('failed', 'Falhou'),
+        ('retrying', 'Tentando Novamente'),
+    ]
+
+    task_id = models.CharField(
+        max_length=255,
+        unique=True,
+        db_index=True,
+        verbose_name='ID da Task Celery'
+    )
+    task_name = models.CharField(
+        max_length=255,
+        verbose_name='Nome da Task'
+    )
+    status = models.CharField(
+        max_length=20,
+        choices=TASK_STATUS_CHOICES,
+        default='pending',
+        db_index=True,
+        verbose_name='Status'
+    )
+    process = models.ForeignKey(
+        DataImportProcess,
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name='async_tasks',
+        verbose_name='Processo Relacionado'
+    )
+    progress = models.IntegerField(
+        default=0,
+        verbose_name='Progresso (%)',
+        help_text='Progresso da task de 0 a 100'
+    )
+    result = models.JSONField(
+        null=True,
+        blank=True,
+        verbose_name='Resultado',
+        help_text='Resultado da task em formato JSON'
+    )
+    error = models.TextField(
+        null=True,
+        blank=True,
+        verbose_name='Mensagem de Erro'
+    )
+    created_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='async_tasks',
+        verbose_name='Criado por'
+    )
+    created_at = models.DateTimeField(
+        auto_now_add=True,
+        verbose_name='Data de Cria\u00e7\u00e3o'
+    )
+    updated_at = models.DateTimeField(
+        auto_now=True,
+        verbose_name='Data de Atualiza\u00e7\u00e3o'
+    )
+    completed_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        verbose_name='Data de Conclus\u00e3o'
+    )
+
+    class Meta:
+        verbose_name = 'Task Ass\u00edncrona'
+        verbose_name_plural = 'Tasks Ass\u00edncronas'
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['task_id', 'status']),
+            models.Index(fields=['created_by', 'status']),
+        ]
+
+    def __str__(self):
+        return f"{self.task_name} - {self.get_status_display()}"

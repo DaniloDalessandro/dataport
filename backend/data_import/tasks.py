@@ -3,8 +3,10 @@ Celery tasks for asynchronous data import processing
 """
 from celery import shared_task
 from django.core.files.uploadedfile import InMemoryUploadedFile
+from django.utils import timezone
 from .services import DataImportService
-from .models import DataImportProcess
+from .models import DataImportProcess, AsyncTask
+from .cache import invalidate_process_caches
 import logging
 
 logger = logging.getLogger(__name__)
@@ -25,12 +27,23 @@ def process_data_import_async(self, table_name, user_id, endpoint_url=None, file
     Returns:
         dict: Import result with process ID and statistics
     """
+    task_id = self.request.id
+    async_task = None
+
     try:
         logger.info(f"Starting async import for table: {table_name}")
 
         from django.contrib.auth import get_user_model
         User = get_user_model()
         user = User.objects.get(id=user_id)
+
+        # Create AsyncTask record for tracking
+        async_task = AsyncTask.objects.create(
+            task_id=task_id,
+            task_name='Data Import',
+            status='started',
+            created_by=user
+        )
 
         # Create or get process
         process, created = DataImportProcess.objects.get_or_create(
@@ -64,22 +77,44 @@ def process_data_import_async(self, table_name, user_id, endpoint_url=None, file
             column_structure
         )
 
+        # Update AsyncTask with process link
+        async_task.process = process
+        async_task.progress = 50
+        async_task.save()
+
         # Update process with record count
         process.record_count = insert_stats['inserted']
         process.error_message = None
         process.save()
+
+        # Invalidate related caches
+        invalidate_process_caches(process.id)
+
+        # Mark task as success
+        async_task.status = 'success'
+        async_task.progress = 100
+        async_task.result = insert_stats
+        async_task.completed_at = timezone.now()
+        async_task.save()
 
         logger.info(f"Async import completed for {table_name}: {insert_stats}")
 
         return {
             'success': True,
             'process_id': process.id,
+            'task_id': task_id,
             'table_name': table_name,
             'statistics': insert_stats
         }
 
     except Exception as e:
         logger.error(f"Error in async import for {table_name}: {str(e)}", exc_info=True)
+
+        # Update AsyncTask with error
+        if async_task:
+            async_task.status = 'failed' if self.request.retries >= self.max_retries else 'retrying'
+            async_task.error = str(e)
+            async_task.save()
 
         # Update process with error
         try:

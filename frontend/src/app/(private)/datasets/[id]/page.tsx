@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react"
 import { useParams } from "next/navigation"
-import { Database, Calendar, ArrowLeft, Upload, X, RefreshCw, Hash, Columns3 } from "lucide-react"
+import { Database, Calendar, ArrowLeft, Upload, X, RefreshCw, Hash, Columns3, Archive, ArchiveRestore } from "lucide-react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -50,6 +50,8 @@ export default function DatasetDetailsPage() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
   const [isUploading, setIsUploading] = useState(false)
   const [isRefreshing, setIsRefreshing] = useState(false)
+  const [isTogglingStatus, setIsTogglingStatus] = useState(false)
+  const [isConfirmDialogOpen, setIsConfirmDialogOpen] = useState(false)
 
   const loadDataset = useCallback(async () => {
     setIsLoading(true)
@@ -97,7 +99,11 @@ export default function DatasetDetailsPage() {
       if (validExtensions.includes(fileExtension)) {
         setSelectedFile(file)
       } else {
-        alert('Por favor, selecione apenas arquivos XLS, XLSX ou CSV')
+        toast({
+          title: 'Formato inválido',
+          description: 'Por favor, selecione apenas arquivos XLS, XLSX ou CSV',
+          variant: 'destructive'
+        })
         event.target.value = ''
       }
     }
@@ -159,6 +165,53 @@ export default function DatasetDetailsPage() {
     setSelectedFile(null)
   }
 
+  const handleToggleStatusClick = () => {
+    setIsConfirmDialogOpen(true)
+  }
+
+  const handleConfirmToggleStatus = async () => {
+    if (!dataset) return
+
+    setIsConfirmDialogOpen(false)
+    setIsTogglingStatus(true)
+    try {
+      const token = localStorage.getItem('access_token')
+      const response = await fetch(`${config.apiUrl}/api/data-import/processes/${id}/toggle-status/`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include',
+      })
+
+      if (response.ok) {
+        const data = await response.json()
+        toast({
+          title: 'Sucesso!',
+          description: data.message || 'Status alterado com sucesso!'
+        })
+        loadDataset() // Reload dataset
+      } else {
+        const errorData = await response.json()
+        toast({
+          title: 'Erro ao alterar status',
+          description: errorData.error || 'Erro desconhecido',
+          variant: 'destructive'
+        })
+      }
+    } catch (error) {
+      console.error('Error toggling status:', error)
+      toast({
+        title: 'Erro ao alterar status',
+        description: error instanceof Error ? error.message : 'Erro desconhecido',
+        variant: 'destructive'
+      })
+    } finally {
+      setIsTogglingStatus(false)
+    }
+  }
+
   const getStatusColor = (status: string) => {
     switch (status) {
       case "active":
@@ -213,8 +266,8 @@ export default function DatasetDetailsPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 p-6">
-      <div className="max-w-7xl mx-auto space-y-6">
+    <div className="min-h-screen bg-gray-50 p-4">
+      <div className="w-full space-y-6">
         {/* Header */}
         <div className="flex items-start justify-between">
           <div className="flex items-start gap-4">
@@ -237,6 +290,23 @@ export default function DatasetDetailsPage() {
             <Button onClick={() => setIsUploadDialogOpen(true)}>
               <Upload className="h-4 w-4 mr-2" />
               Carregar Mais Dados
+            </Button>
+            <Button
+              variant={dataset.status === 'active' ? 'destructive' : 'default'}
+              onClick={handleToggleStatusClick}
+              disabled={isTogglingStatus}
+            >
+              {dataset.status === 'active' ? (
+                <>
+                  <Archive className="h-4 w-4 mr-2" />
+                  {isTogglingStatus ? 'Arquivando...' : 'Arquivar'}
+                </>
+              ) : (
+                <>
+                  <ArchiveRestore className="h-4 w-4 mr-2" />
+                  {isTogglingStatus ? 'Ativando...' : 'Ativar'}
+                </>
+              )}
             </Button>
             <Button
               variant="outline"
@@ -353,6 +423,49 @@ export default function DatasetDetailsPage() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Modal de Confirmação para Arquivar/Ativar */}
+      <Dialog open={isConfirmDialogOpen} onOpenChange={setIsConfirmDialogOpen}>
+        <DialogContent className="sm:max-w-[425px]">
+          <DialogHeader>
+            <DialogTitle>
+              {dataset?.status === 'active' ? 'Arquivar Dataset' : 'Ativar Dataset'}
+            </DialogTitle>
+            <DialogDescription>
+              {dataset?.status === 'active'
+                ? `Tem certeza que deseja arquivar o dataset "${dataset?.table_name}"? O dataset ficará inativo e não aparecerá nas listagens públicas.`
+                : `Tem certeza que deseja ativar o dataset "${dataset?.table_name}"? O dataset voltará a aparecer nas listagens públicas.`
+              }
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setIsConfirmDialogOpen(false)}
+            >
+              Cancelar
+            </Button>
+            <Button
+              type="button"
+              variant={dataset?.status === 'active' ? 'destructive' : 'default'}
+              onClick={handleConfirmToggleStatus}
+            >
+              {dataset?.status === 'active' ? (
+                <>
+                  <Archive className="h-4 w-4 mr-2" />
+                  Arquivar
+                </>
+              ) : (
+                <>
+                  <ArchiveRestore className="h-4 w-4 mr-2" />
+                  Ativar
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Modal de Upload de Mais Dados */}
       <Dialog open={isUploadDialogOpen} onOpenChange={setIsUploadDialogOpen}>
