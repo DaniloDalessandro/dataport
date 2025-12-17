@@ -58,7 +58,7 @@ interface PublicDataset {
 interface PublicDataResponse {
   success: boolean;
   data: Record<string, string | number | boolean>[];
-  // Add other properties if they exist in the response
+  // Adiciona outras propriedades if they exist in the response
 }
 
 export default function DatasetsPublicosPage() {
@@ -74,7 +74,7 @@ export default function DatasetsPublicosPage() {
   const [activeFilters, setActiveFilters] = useState<Record<string, FilterValue>>({})
   const [filteredData, setFilteredData] = useState<Record<string, string | number | boolean>[]>([])
 
-  // Fetch public datasets on mount
+  // Busca datasets públicos ao montar
   useEffect(() => {
     const fetchDatasets = async () => {
       try {
@@ -105,7 +105,7 @@ export default function DatasetsPublicosPage() {
     try {
       const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
 
-      // Fetch column metadata
+      // Busca metadados das colunas
       const metadataResponse = await fetch(
         `${API_BASE_URL}/api/data-import/public-metadata/${dataset.id}/`
       )
@@ -118,7 +118,7 @@ export default function DatasetsPublicosPage() {
         }
       }
 
-      // Fetch dataset data
+      // Busca dados do dataset
       const dataResponse = await fetch(
         `${API_BASE_URL}/api/data-import/public-data/${dataset.id}/`
       )

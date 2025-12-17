@@ -2,7 +2,6 @@
 Celery tasks for asynchronous data import processing
 """
 from celery import shared_task
-from django.core.files.uploadedfile import InMemoryUploadedFile
 from django.utils import timezone
 from .services import DataImportService
 from .models import DataImportProcess, AsyncTask

@@ -161,7 +161,7 @@ export async function authenticatedFetch(
     throw new Error("No access token available")
   }
 
-  // Add authorization header
+  // Adiciona header de autorização
   const headers = {
     ...options.headers,
     Authorization: `Bearer ${accessToken}`,

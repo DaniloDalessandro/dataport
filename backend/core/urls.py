@@ -16,8 +16,6 @@ Including another URLconf
 """
 from django.contrib import admin
 from django.urls import path, include
-from rest_framework.routers import DefaultRouter
-from accounts.views import CompanyViewSet, UserViewSet
 from core.views import (
     HealthCheckView, DetailedHealthCheckView,
     ReadinessCheckView, LivenessCheckView
@@ -28,12 +26,8 @@ from drf_spectacular.views import (
     SpectacularRedocView,
 )
 
-router = DefaultRouter()
-router.register(r'companies', CompanyViewSet, basename='company')
-router.register(r'users', UserViewSet, basename='user')
-
 urlpatterns = [
-    path('admin/', admin.site.urls),
+    path('admin/', admin.site.urls, name='admin:index'),
 
     # API Documentation (Swagger/OpenAPI)
     path('api/schema/', SpectacularAPIView.as_view(), name='schema'),
@@ -47,13 +41,13 @@ urlpatterns = [
     path('health/live/', LivenessCheckView.as_view(), name='health-live'),
 
     # API v1 - Versioned endpoints
-    path('api/v1/', include(router.urls)),
     path('api/v1/auth/', include('accounts.urls')),
     path('api/v1/data-import/', include('data_import.urls')),
+    path('api/v1/alice/', include('alice.urls')),
 
     # Legacy endpoints (backward compatibility) - will be deprecated
     # These redirect to v1 automatically
-    path('api/', include(router.urls)),
     path('api/auth/', include('accounts.urls')),
     path('api/data-import/', include('data_import.urls')),
+    path('api/alice/', include('alice.urls')),
 ]

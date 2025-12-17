@@ -1,3 +1,4 @@
+import logging
 from django.core.mail import send_mail
 from django.conf import settings
 from django.template.loader import render_to_string
@@ -7,6 +8,7 @@ from django.utils import timezone
 from typing import Optional, Tuple
 
 User = get_user_model()
+logger = logging.getLogger(__name__)
 
 
 class EmailService:
@@ -98,25 +100,23 @@ class EmailService:
 
 
 class UserService:
-    """Service layer for user-related business logic"""
+    """Camada de serviço para lógica de negócio relacionada a usuários"""
 
     @staticmethod
     def create_user_with_temporary_password(username: str, email: str, **extra_fields) -> Tuple[User, str]:
         """
-        Creates a user with a temporary password and sends welcome email.
+        Cria um usuário com senha temporária e envia email de boas-vindas.
 
         Args:
-            username: The username for the new user
-            email: The email for the new user
-            **extra_fields: Additional fields for user creation
+            username: Nome de usuário para o novo usuário
+            email: Email para o novo usuário
+            **extra_fields: Campos adicionais para criação do usuário
 
         Returns:
-            Tuple of (User instance, temporary password string)
+            Tupla de (instância User, string da senha temporária)
         """
-        # Generate temporary password
         temporary_password = User.generate_temporary_password()
 
-        # Create user with temporary password
         user = User.objects.create_user(
             username=username,
             email=email,
@@ -124,32 +124,27 @@ class UserService:
             **extra_fields
         )
 
-        # Set flag to force password change
         user.must_change_password = True
-
-        # Generate reset token for password change
         reset_token = user.generate_reset_token()
         user.save()
 
-        # Send welcome email with temporary password
         try:
             EmailService.send_temporary_password(user, temporary_password, reset_token)
         except Exception as e:
-            # Log error but don't fail user creation
-            print(f"Failed to send welcome email to {email}: {str(e)}")
+            logger.warning(f"Failed to send welcome email to {email}: {str(e)}")
 
         return user, temporary_password
 
     @staticmethod
     def get_user_by_email(email: str) -> Optional[User]:
         """
-        Retrieves a user by email address.
+        Busca um usuário pelo endereço de email.
 
         Args:
-            email: The email to search for
+            email: Email a ser buscado
 
         Returns:
-            User instance if found, None otherwise
+            Instância User se encontrada, None caso contrário
         """
         try:
             return User.objects.get(email=email)
@@ -159,56 +154,49 @@ class UserService:
     @staticmethod
     def request_password_reset(email: str) -> Optional[User]:
         """
-        Initiates password reset process by generating token and sending email.
+        Inicia processo de redefinição de senha gerando token e enviando email.
 
         Args:
-            email: Email address of the user requesting reset
+            email: Endereço de email do usuário solicitando redefinição
 
         Returns:
-            User instance if found, None otherwise (for security, same response either way)
+            None sempre (por segurança, mesma resposta independente se email existe)
         """
         user = UserService.get_user_by_email(email)
 
         if user:
-            # Generate reset token
             reset_token = user.generate_reset_token()
             user.save()
 
-            # Send reset email
             try:
                 EmailService.send_password_reset_email(user, reset_token)
             except Exception as e:
-                print(f"Failed to send password reset email to {email}: {str(e)}")
+                logger.warning(f"Failed to send password reset email to {email}: {str(e)}")
 
-        # Always return None for security (don't reveal if email exists)
         return None
 
     @staticmethod
     def reset_password_with_token(token: str, new_password: str) -> Tuple[bool, Optional[str], Optional[User]]:
         """
-        Resets user password using a valid reset token.
+        Redefine senha do usuário usando token de redefinição válido.
 
         Args:
-            token: The password reset token
-            new_password: The new password to set
+            token: Token de redefinição de senha
+            new_password: Nova senha a ser definida
 
         Returns:
-            Tuple of (success: bool, error_message: Optional[str], user: Optional[User])
+            Tupla de (sucesso: bool, mensagem_erro: Optional[str], usuário: Optional[User])
         """
         try:
             user = User.objects.get(reset_password_token=token)
         except User.DoesNotExist:
             return False, 'Token de redefinição inválido', None
 
-        # Check if token is expired
         if user.reset_password_token_expires < timezone.now():
             return False, 'Token de redefinição expirado', None
 
-        # Set new password
         user.set_password(new_password)
         user.must_change_password = False
-
-        # Clear reset token
         user.reset_password_token = None
         user.reset_password_token_expires = None
         user.save()
@@ -218,21 +206,19 @@ class UserService:
     @staticmethod
     def change_password(user: User, old_password: str, new_password: str) -> Tuple[bool, Optional[str]]:
         """
-        Changes user password after validating the old password.
+        Altera senha do usuário após validar a senha antiga.
 
         Args:
-            user: The user whose password to change
-            old_password: Current password for validation
-            new_password: New password to set
+            user: Usuário cuja senha será alterada
+            old_password: Senha atual para validação
+            new_password: Nova senha a ser definida
 
         Returns:
-            Tuple of (success: bool, error_message: Optional[str])
+            Tupla de (sucesso: bool, mensagem_erro: Optional[str])
         """
-        # Validate old password
         if not user.check_password(old_password):
             return False, 'Senha atual incorreta'
 
-        # Set new password
         user.set_password(new_password)
         user.must_change_password = False
         user.save()
@@ -242,14 +228,14 @@ class UserService:
     @staticmethod
     def validate_user_credentials(email: str, password: str) -> Tuple[bool, Optional[User], Optional[str]]:
         """
-        Validates user credentials for authentication.
+        Valida credenciais do usuário para autenticação.
 
         Args:
-            email: User's email address
-            password: User's password
+            email: Endereço de email do usuário
+            password: Senha do usuário
 
         Returns:
-            Tuple of (is_valid: bool, user: Optional[User], error_message: Optional[str])
+            Tupla de (válido: bool, usuário: Optional[User], mensagem_erro: Optional[str])
         """
         user = UserService.get_user_by_email(email)
 

@@ -26,7 +26,7 @@ export function DataFlowAnimation() {
     const ctx = canvas.getContext("2d")
     if (!ctx) return
 
-    // Set canvas size
+    // Define tamanho do canvas
     const resizeCanvas = () => {
       canvas.width = window.innerWidth
       canvas.height = window.innerHeight
@@ -98,9 +98,9 @@ export function DataFlowAnimation() {
       })
       ctx.restore()
 
-      // Update and draw particles
+      // Atualiza e desenha partículas
       particlesRef.current.forEach((particle) => {
-        // Update position
+        // Atualiza posição
         particle.x += particle.vx
         particle.y += particle.vy
 
@@ -110,7 +110,7 @@ export function DataFlowAnimation() {
         if (particle.y < -50) particle.y = canvas.height + 50
         if (particle.y > canvas.height + 50) particle.y = -50
 
-        // Add trail point (trail menor)
+        // Adiciona ponto de rastro (trail menor)
         if (particle.type === 'dot') {
           particle.trail.push({
             x: particle.x,

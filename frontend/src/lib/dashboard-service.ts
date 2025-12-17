@@ -35,8 +35,11 @@ export interface DashboardStats {
 
 export async function getDashboardStats(): Promise<DashboardStats> {
   try {
-    const response = await apiGet('/api/data-import/dashboard-stats/')
-    return response.data
+    const response = await apiGet('/api/data-import/dashboard-stats/') as { success: boolean; data: DashboardStats }
+    if (response.success && response.data) {
+      return response.data
+    }
+    throw new Error('Invalid response format')
   } catch (error) {
     console.error('Error fetching dashboard stats:', error)
     throw error

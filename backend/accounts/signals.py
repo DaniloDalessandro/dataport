@@ -49,11 +49,6 @@ def create_or_update_user_profile(sender, instance, created, **kwargs):
                 pass
 
         elif instance.profile_type == 'externo':
-            # For external profiles, we need company_name and external_type
-            # These should be provided separately through the admin or API
-            # We'll create the profile only if it doesn't exist
-            # This prevents errors when creating user without profile data
-
             # Delete internal profile if it exists
             try:
                 if hasattr(instance, 'internal_profile'):
@@ -61,9 +56,18 @@ def create_or_update_user_profile(sender, instance, created, **kwargs):
             except InternalProfile.DoesNotExist:
                 pass
 
-            # Note: ExternalProfile creation is handled separately
-            # because it requires additional required fields (company_name, external_type)
-            # The admin or API should handle this creation explicitly
+            # Create external profile with default values if it doesn't exist
+            # The admin or API should update these values later
+            if not hasattr(instance, 'external_profile'):
+                try:
+                    ExternalProfile.objects.create(
+                        user=instance,
+                        company_name=instance.email.split('@')[1] if instance.email else 'Empresa não informada',
+                        external_type='cliente'
+                    )
+                except Exception:
+                    # If creation fails, it will need to be created manually
+                    pass
 
 
 @receiver(post_save, sender=InternalProfile)

@@ -7,11 +7,23 @@ import secrets
 
 
 class Company(models.Model):
-    name = models.CharField('Nome', max_length=200, db_index=True)  # Indexed for name searches
-    cnpj = models.CharField('CNPJ', max_length=18, unique=True, db_index=True)  # Already unique, but explicit index
+    name = models.CharField('Nome', max_length=200, db_index=True)
+    cnpj = models.CharField(
+        'CNPJ',
+        max_length=18,
+        unique=True,
+        db_index=True,
+        validators=[
+            RegexValidator(
+                regex=r'^\d{2}\.\d{3}\.\d{3}/\d{4}-\d{2}$',
+                message='CNPJ deve estar no formato: 00.000.000/0000-00'
+            )
+        ],
+        help_text='CNPJ da empresa (Formato: 00.000.000/0000-00)'
+    )
     email = models.EmailField('E-mail', blank=True, null=True)
     phone = models.CharField('Telefone', max_length=20, blank=True, null=True)
-    is_active = models.BooleanField('Ativa', default=True, db_index=True)  # Indexed for filtering active companies
+    is_active = models.BooleanField('Ativa', default=True, db_index=True)
     created_at = models.DateTimeField('Criado em', auto_now_add=True)
     updated_at = models.DateTimeField('Atualizado em', auto_now=True)
     created_by = models.ForeignKey(
@@ -46,12 +58,13 @@ class CustomUser(AbstractUser):
         ('externo', 'Externo'),
     ]
 
+    email = models.EmailField('E-mail', unique=True, db_index=True)
     profile_type = models.CharField(
         'Tipo de Perfil',
         max_length=10,
         choices=PROFILE_TYPE_CHOICES,
         default='interno',
-        db_index=True,  # Indexed for filtering by profile type
+        db_index=True,
         help_text='Define se o usuário é interno ou externo à organização'
     )
     companies = models.ManyToManyField(
@@ -61,9 +74,23 @@ class CustomUser(AbstractUser):
         blank=True
     )
     phone = models.CharField('Telefone', max_length=20, blank=True, null=True)
-    cpf = models.CharField('CPF', max_length=14, unique=True, blank=True, null=True, db_index=True)
-    is_active = models.BooleanField('Ativo', default=True, db_index=True)  # Indexed for filtering active users
-    reset_password_token = models.CharField('Token de Redefinição', max_length=100, blank=True, null=True, db_index=True)  # Indexed for password reset lookups
+    cpf = models.CharField(
+        'CPF',
+        max_length=14,
+        unique=True,
+        blank=True,
+        null=True,
+        db_index=True,
+        validators=[
+            RegexValidator(
+                regex=r'^\d{3}\.\d{3}\.\d{3}-\d{2}$',
+                message='CPF deve estar no formato: 000.000.000-00'
+            )
+        ],
+        help_text='CPF do usuário (Formato: 000.000.000-00)'
+    )
+    is_active = models.BooleanField('Ativo', default=True, db_index=True)
+    reset_password_token = models.CharField('Token de Redefinição', max_length=100, blank=True, null=True, db_index=True)
     reset_password_token_expires = models.DateTimeField('Token Expira em', blank=True, null=True)
     must_change_password = models.BooleanField('Deve alterar senha', default=False)
     created_at = models.DateTimeField('Criado em', auto_now_add=True)

@@ -1,19 +1,18 @@
 "use client"
 
 import { useState, useRef, useEffect } from "react"
+import { useRouter } from "next/navigation"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
+import { useAuth } from "@/hooks/useAuth"
 import {
   Bot,
   Send,
   User,
   Sparkles,
-  Database,
-  TrendingUp,
-  BarChart3,
   Info
 } from "lucide-react"
 
@@ -24,49 +23,20 @@ interface Message {
   timestamp: Date
 }
 
-// Call Alice API endpoint
-const callAliceAPI = async (message: string): Promise<string> => {
-  try {
-    const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
-    const token = localStorage.getItem('access_token')
-
-    const response = await fetch(`${API_BASE_URL}/api/data-import/alice/chat/`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`
-      },
-      body: JSON.stringify({ message })
-    })
-
-    const data = await response.json()
-
-    if (!response.ok) {
-      throw new Error(data.error || 'Erro ao processar pergunta')
-    }
-
-    if (data.success) {
-      return data.response
-    } else {
-      throw new Error(data.error || 'Erro desconhecido')
-    }
-  } catch (error) {
-    console.error('Error calling Alice API:', error)
-    return `Desculpe, ocorreu um erro ao processar sua pergunta. ${error instanceof Error ? error.message : 'Tente novamente.'}`
-  }
-}
-
 export default function AlicePage() {
+  const router = useRouter()
+  const { isAuthenticated, isLoading, refreshToken } = useAuth()
   const [messages, setMessages] = useState<Message[]>([
     {
       id: "1",
       role: "assistant",
-      content: "Olá! 👋 Sou a **Alice**, sua assistente virtual do DataDock. Estou aqui para ajudar você a entender e analisar os dados dos seus datasets.\n\nPosso responder perguntas sobre:\n- 📊 Volume e armazenamento de dados\n- 📈 Tendências e crescimento\n- 🔍 Status dos datasets\n- 💡 Insights e recomendações\n\nComo posso ajudar você hoje?",
+      content: "Olá! 👋 Sou a **Alice**, sua assistente virtual do DataPort. Estou aqui para ajudar você a entender e analisar os dados dos seus datasets.\n\nPosso responder perguntas sobre:\n- 📊 Volume e armazenamento de dados\n- 📈 Tendências e crescimento\n- 🔍 Status dos datasets\n- 💡 Insights e recomendações\n\nComo posso ajudar você hoje?",
       timestamp: new Date()
     }
   ])
   const [input, setInput] = useState("")
   const [isTyping, setIsTyping] = useState(false)
+  const [rateLimitCooldown, setRateLimitCooldown] = useState(0)
   const scrollRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -75,8 +45,80 @@ export default function AlicePage() {
     }
   }, [messages, isTyping])
 
+  // Redirect to login if not authenticated
+  useEffect(() => {
+    if (!isLoading && !isAuthenticated) {
+      router.push('/login')
+    }
+  }, [isLoading, isAuthenticated, router])
+
+  // Rate limit cooldown timer
+  useEffect(() => {
+    if (rateLimitCooldown > 0) {
+      const timer = setTimeout(() => {
+        setRateLimitCooldown(rateLimitCooldown - 1)
+      }, 1000)
+      return () => clearTimeout(timer)
+    }
+  }, [rateLimitCooldown])
+
+  const callAliceAPI = async (message: string): Promise<string> => {
+    try {
+      // Refresh token if needed
+      const tokenRefreshed = await refreshToken()
+      if (!tokenRefreshed) {
+        router.push('/login')
+        throw new Error('Sessão expirada. Faça login novamente.')
+      }
+
+      const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
+      const token = localStorage.getItem('access_token')
+
+      if (!token) {
+        router.push('/login')
+        throw new Error('Token não encontrado. Faça login novamente.')
+      }
+
+      const response = await fetch(`${API_BASE_URL}/api/alice/chat/`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ message })
+      })
+
+      const data = await response.json()
+
+      // Handle 401 - Unauthorized
+      if (response.status === 401) {
+        router.push('/login')
+        throw new Error('Sessão expirada. Redirecionando para login...')
+      }
+
+      // Handle 429 - Rate Limit
+      if (response.status === 429) {
+        setRateLimitCooldown(60) // 60 seconds cooldown
+        throw new Error('Muitas requisições. Aguarde 60 segundos antes de tentar novamente.')
+      }
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Erro ao processar pergunta')
+      }
+
+      if (data.success) {
+        return data.response
+      } else {
+        throw new Error(data.error || 'Erro desconhecido')
+      }
+    } catch (error) {
+      console.error('Error calling Alice API:', error)
+      return `Desculpe, ocorreu um erro: ${error instanceof Error ? error.message : 'Tente novamente.'}`
+    }
+  }
+
   const handleSend = async () => {
-    if (!input.trim()) return
+    if (!input.trim() || rateLimitCooldown > 0) return
 
     const userMessage: Message = {
       id: Date.now().toString(),
@@ -127,8 +169,22 @@ export default function AlicePage() {
     "Me dê recomendações"
   ]
 
+  // Show loading while checking authentication
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center h-[calc(100vh-6rem)] p-8">
+        <div className="text-center">
+          <div className="h-12 w-12 bg-gradient-to-br from-purple-500 to-blue-500 rounded-full flex items-center justify-center mx-auto mb-4">
+            <Bot className="h-6 w-6 text-white animate-pulse" />
+          </div>
+          <p className="text-gray-600">Carregando Alice...</p>
+        </div>
+      </div>
+    )
+  }
+
   return (
-    <div className="flex flex-col h-[calc(100vh-8rem)] gap-6 p-8">
+    <div className="flex flex-col h-[calc(100vh-6rem)] gap-6 p-8">
       {/* Header */}
       <div className="flex items-center gap-3">
         <div className="h-12 w-12 bg-gradient-to-br from-purple-500 to-blue-500 rounded-full flex items-center justify-center">
@@ -241,21 +297,33 @@ export default function AlicePage() {
 
           {/* Input Area */}
           <div className="border-t p-4 bg-gray-50">
+            {rateLimitCooldown > 0 && (
+              <div className="mb-2 p-2 bg-yellow-50 border border-yellow-200 rounded-lg">
+                <p className="text-xs text-yellow-800 flex items-center gap-1">
+                  <Info className="h-3 w-3" />
+                  Aguarde {rateLimitCooldown}s para enviar outra mensagem (limite de taxa atingido)
+                </p>
+              </div>
+            )}
             <div className="flex gap-2">
               <Input
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyPress={handleKeyPress}
-                placeholder="Faça uma pergunta sobre os datasets..."
+                placeholder={rateLimitCooldown > 0 ? `Aguarde ${rateLimitCooldown}s...` : "Faça uma pergunta sobre os datasets..."}
                 className="flex-1 bg-white"
-                disabled={isTyping}
+                disabled={isTyping || rateLimitCooldown > 0}
               />
               <Button
                 onClick={handleSend}
-                disabled={!input.trim() || isTyping}
+                disabled={!input.trim() || isTyping || rateLimitCooldown > 0}
                 className="bg-gradient-to-r from-purple-500 to-blue-500 hover:from-purple-600 hover:to-blue-600"
               >
-                <Send className="h-4 w-4" />
+                {rateLimitCooldown > 0 ? (
+                  <span className="text-xs">{rateLimitCooldown}s</span>
+                ) : (
+                  <Send className="h-4 w-4" />
+                )}
               </Button>
             </div>
             <p className="text-xs text-gray-500 mt-2 flex items-center gap-1">
@@ -265,43 +333,6 @@ export default function AlicePage() {
           </div>
         </CardContent>
       </Card>
-
-      {/* Stats Footer */}
-      <div className="grid grid-cols-3 gap-4">
-        <Card className="bg-gradient-to-br from-blue-50 to-white">
-          <CardContent className="p-4">
-            <div className="flex items-center gap-2">
-              <Database className="h-4 w-4 text-blue-600" />
-              <div>
-                <p className="text-xs text-gray-600">Datasets Ativos</p>
-                <p className="text-lg font-bold text-gray-900">45</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-        <Card className="bg-gradient-to-br from-purple-50 to-white">
-          <CardContent className="p-4">
-            <div className="flex items-center gap-2">
-              <BarChart3 className="h-4 w-4 text-purple-600" />
-              <div>
-                <p className="text-xs text-gray-600">Registros Totais</p>
-                <p className="text-lg font-bold text-gray-900">2.4M</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-        <Card className="bg-gradient-to-br from-green-50 to-white">
-          <CardContent className="p-4">
-            <div className="flex items-center gap-2">
-              <TrendingUp className="h-4 w-4 text-green-600" />
-              <div>
-                <p className="text-xs text-gray-600">Crescimento</p>
-                <p className="text-lg font-bold text-gray-900">+12%</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
     </div>
   )
 }

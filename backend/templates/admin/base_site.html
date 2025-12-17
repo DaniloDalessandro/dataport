@@ -1,0 +1,179 @@
+{% extends "admin/base.html" %}
+{% load static %}
+
+{% block title %}{% if subtitle %}{{ subtitle }} | {% endif %}{{ title }} | {{ site_title|default:_('DataPort Admin') }}{% endblock %}
+
+{% block branding %}
+<div style="padding: 10px 20px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 0;">
+    <h1 id="site-name" style="margin: 0; padding: 0;">
+        <a href="{% url 'admin:index' %}" style="color: white; text-decoration: none; display: flex; align-items: center; gap: 10px;">
+            <span style="font-size: 28px;">📊</span>
+            <span style="font-size: 20px; font-weight: 600; letter-spacing: 0.5px;">DataPort</span>
+            <span style="font-size: 12px; background: rgba(255,255,255,0.2); padding: 2px 8px; border-radius: 10px; margin-left: 5px;">Admin</span>
+        </a>
+    </h1>
+</div>
+{% endblock %}
+
+{% block extrastyle %}
+{{ block.super }}
+<style>
+    /* Customização do cabeçalho */
+    #header {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+    }
+
+    #header a {
+        color: rgba(255, 255, 255, 0.9);
+    }
+
+    #header a:hover {
+        color: white;
+    }
+
+    /* Breadcrumbs */
+    .breadcrumbs {
+        background: #f8f9fa;
+        border-bottom: 1px solid #dee2e6;
+        padding: 10px 20px;
+    }
+
+    .breadcrumbs a {
+        color: #667eea;
+        text-decoration: none;
+    }
+
+    .breadcrumbs a:hover {
+        color: #764ba2;
+        text-decoration: underline;
+    }
+
+    /* Botões */
+    .button, input[type=submit], input[type=button], .submit-row input {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        border: none;
+        color: white;
+        padding: 10px 20px;
+        border-radius: 5px;
+        cursor: pointer;
+        transition: all 0.3s ease;
+    }
+
+    .button:hover, input[type=submit]:hover, input[type=button]:hover {
+        background: linear-gradient(135deg, #764ba2 0%, #667eea 100%);
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+    }
+
+    /* Links */
+    a {
+        color: #667eea;
+    }
+
+    a:hover {
+        color: #764ba2;
+    }
+
+    /* Tabelas */
+    #result_list tbody tr:hover {
+        background-color: #f8f9fa;
+    }
+
+    /* Cards na página inicial */
+    .module h2, .module caption {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        padding: 12px 15px;
+        border-radius: 5px 5px 0 0;
+        font-weight: 600;
+    }
+
+    .module {
+        border: 1px solid #e0e0e0;
+        border-radius: 5px;
+        overflow: hidden;
+        margin-bottom: 20px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+    }
+
+    /* Mensagens */
+    .messagelist li {
+        border-radius: 5px;
+        margin-bottom: 10px;
+    }
+
+    .messagelist .success {
+        background-color: #d4edda;
+        border-color: #c3e6cb;
+        color: #155724;
+    }
+
+    .messagelist .error {
+        background-color: #f8d7da;
+        border-color: #f5c6cb;
+        color: #721c24;
+    }
+
+    .messagelist .warning {
+        background-color: #fff3cd;
+        border-color: #ffeaa7;
+        color: #856404;
+    }
+
+    /* Sidebar */
+    #content-related h3 {
+        background: #f8f9fa;
+        padding: 10px;
+        border-left: 4px solid #667eea;
+        margin-top: 0;
+    }
+
+    /* Fieldsets */
+    .aligned label {
+        font-weight: 600;
+        color: #495057;
+    }
+
+    fieldset.module {
+        border: 1px solid #e0e0e0;
+        border-radius: 5px;
+        padding: 15px;
+        margin-bottom: 20px;
+    }
+
+    fieldset h2 {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        padding: 10px 15px;
+        margin: -15px -15px 15px -15px;
+        border-radius: 5px 5px 0 0;
+    }
+
+    /* Dashboard */
+    #content-main .module table {
+        border-collapse: separate;
+        border-spacing: 0;
+    }
+
+    #content-main .module table th {
+        background: #f8f9fa;
+        font-weight: 600;
+        color: #495057;
+    }
+</style>
+{% endblock %}
+
+{% block userlinks %}
+<div style="color: rgba(255, 255, 255, 0.9); display: flex; align-items: center; gap: 15px;">
+    <span style="font-size: 12px;">
+        👤 <strong>{{ user.get_full_name|default:user.username }}</strong>
+    </span>
+    {% if user.is_active and user.is_staff %}
+        <span style="font-size: 11px; background: rgba(255,255,255,0.15); padding: 3px 8px; border-radius: 10px;">
+            {% if user.is_superuser %}🔑 Superadmin{% else %}⚙️ Staff{% endif %}
+        </span>
+    {% endif %}
+    {{ block.super }}
+</div>
+{% endblock %}

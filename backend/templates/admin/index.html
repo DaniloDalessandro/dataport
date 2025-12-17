@@ -1,0 +1,246 @@
+{% extends "admin/base_site.html" %}
+{% load i18n static %}
+
+{% block extrahead %}
+{{ block.super }}
+<style>
+    /* Container principal com espaçamento superior */
+    #content-main {
+        padding-top: 20px;
+    }
+
+    /* Grid de estatísticas */
+    .dashboard-stats {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+        gap: 25px;
+        margin-bottom: 40px;
+    }
+
+    /* Cards de estatísticas */
+    .stat-card {
+        background: white;
+        border-radius: 10px;
+        padding: 25px;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+        border-left: 4px solid;
+        transition: transform 0.3s ease, box-shadow 0.3s ease;
+        position: relative;
+        min-height: 140px;
+    }
+
+    .stat-card:hover {
+        transform: translateY(-5px);
+        box-shadow: 0 8px 24px rgba(0,0,0,0.12);
+    }
+
+    .stat-card.users {
+        border-left-color: #667eea;
+    }
+
+    .stat-card.datasets {
+        border-left-color: #28a745;
+    }
+
+    .stat-card.records {
+        border-left-color: #ffc107;
+    }
+
+    .stat-card.companies {
+        border-left-color: #17a2b8;
+    }
+
+    .stat-card h3 {
+        margin: 0 0 15px 0;
+        font-size: 13px;
+        color: #6c757d;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        font-weight: 600;
+    }
+
+    .stat-card .value {
+        font-size: 42px;
+        font-weight: bold;
+        margin: 15px 0;
+        line-height: 1;
+    }
+
+    .stat-card.users .value {
+        color: #667eea;
+    }
+
+    .stat-card.datasets .value {
+        color: #28a745;
+    }
+
+    .stat-card.records .value {
+        color: #ffc107;
+    }
+
+    .stat-card.companies .value {
+        color: #17a2b8;
+    }
+
+    .stat-card small {
+        display: block;
+        margin-top: 10px;
+        color: #6c757d;
+        font-size: 12px;
+    }
+
+    .stat-card .icon {
+        font-size: 50px;
+        opacity: 0.1;
+        position: absolute;
+        right: 25px;
+        top: 25px;
+        pointer-events: none;
+    }
+
+    /* Banner de boas-vindas */
+    .welcome-banner {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        padding: 35px 40px;
+        border-radius: 12px;
+        margin-bottom: 40px;
+        box-shadow: 0 6px 16px rgba(102, 126, 234, 0.3);
+    }
+
+    .welcome-banner h2 {
+        margin: 0 0 12px 0;
+        font-size: 32px;
+        font-weight: 600;
+        line-height: 1.2;
+    }
+
+    .welcome-banner p {
+        margin: 0;
+        opacity: 0.95;
+        font-size: 15px;
+        line-height: 1.5;
+    }
+
+    /* Espaçamento entre seções */
+    .app-accounts.module,
+    .app-data_import.module {
+        margin-top: 40px;
+        margin-bottom: 25px;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="welcome-banner">
+    <h2>👋 Bem-vindo ao DataPort Admin</h2>
+    <p>Sistema de gerenciamento e importação de dados</p>
+</div>
+
+<div class="dashboard-stats">
+    <div class="stat-card users">
+        <div class="icon">👥</div>
+        <h3>Usuários</h3>
+        <div class="value">{{ user_count|default:"0" }}</div>
+        <small>Total de usuários cadastrados</small>
+    </div>
+
+    <div class="stat-card datasets">
+        <div class="icon">📊</div>
+        <h3>Datasets</h3>
+        <div class="value">{{ dataset_count|default:"0" }}</div>
+        <small>Processos de importação</small>
+    </div>
+
+    <div class="stat-card records">
+        <div class="icon">📈</div>
+        <h3>Registros</h3>
+        <div class="value">{{ record_count|default:"0" }}</div>
+        <small>Total de registros importados</small>
+    </div>
+
+    <div class="stat-card companies">
+        <div class="icon">🏢</div>
+        <h3>Empresas</h3>
+        <div class="value">{{ company_count|default:"0" }}</div>
+        <small>Empresas cadastradas</small>
+    </div>
+</div>
+
+{% if app_list %}
+    {% for app in app_list %}
+        <div class="app-{{ app.app_label }} module">
+            <table>
+                <caption>
+                    <a href="{{ app.app_url }}" class="section" title="{% blocktranslate with name=app.name %}Models in the {{ name }} application{% endblocktranslate %}">
+                        {{ app.name }}
+                    </a>
+                </caption>
+                {% for model in app.models %}
+                    <tr class="model-{{ model.object_name|lower }}">
+                        {% if model.admin_url %}
+                            <th scope="row">
+                                <a href="{{ model.admin_url }}" {% if model.add_url %}class="addlink"{% endif %}>
+                                    {{ model.name }}
+                                </a>
+                            </th>
+                        {% else %}
+                            <th scope="row">{{ model.name }}</th>
+                        {% endif %}
+
+                        {% if model.add_url %}
+                            <td><a href="{{ model.add_url }}" class="addlink">{% translate 'Add' %}</a></td>
+                        {% else %}
+                            <td>&nbsp;</td>
+                        {% endif %}
+
+                        {% if model.admin_url %}
+                            {% if model.view_only %}
+                                <td><a href="{{ model.admin_url }}" class="viewlink">{% translate 'View' %}</a></td>
+                            {% else %}
+                                <td><a href="{{ model.admin_url }}" class="changelink">{% translate 'Change' %}</a></td>
+                            {% endif %}
+                        {% else %}
+                            <td>&nbsp;</td>
+                        {% endif %}
+                    </tr>
+                {% endfor %}
+            </table>
+        </div>
+    {% endfor %}
+{% else %}
+    <p>{% translate "You don't have permission to view or edit anything." %}</p>
+{% endif %}
+{% endblock %}
+
+{% block sidebar %}
+<div id="content-related">
+    <div class="module" id="recent-actions-module">
+        <h2>{% translate 'Recent actions' %}</h2>
+        <h3>{% translate 'My actions' %}</h3>
+            {% load log %}
+            {% get_admin_log 10 as admin_log for_user user %}
+            {% if not admin_log %}
+            <p>{% translate 'None available' %}</p>
+            {% else %}
+            <ul class="actionlist">
+            {% for entry in admin_log %}
+            <li class="{% if entry.is_addition %}addlink{% endif %}{% if entry.is_change %}changelink{% endif %}{% if entry.is_deletion %}deletelink{% endif %}">
+                {% if entry.is_deletion or not entry.get_admin_url %}
+                    {{ entry.object_repr }}
+                {% else %}
+                    <a href="{{ entry.get_admin_url }}">{{ entry.object_repr }}</a>
+                {% endif %}
+                <br>
+                {% if entry.content_type %}
+                    <span class="mini quiet">{% filter capfirst %}{{ entry.content_type.name }}{% endfilter %}</span>
+                {% else %}
+                    <span class="mini quiet">{% translate 'Unknown content' %}</span>
+                {% endif %}
+            </li>
+            {% endfor %}
+            </ul>
+            {% endif %}
+    </div>
+</div>
+{% endblock %}

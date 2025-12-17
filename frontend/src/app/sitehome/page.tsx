@@ -291,7 +291,7 @@ export default function SiteHomePage() {
     },
   });
 
-  // Fetch site configuration
+  // Busca configuração do site
   useEffect(() => {
     const fetchConfig = async () => {
       try {
@@ -304,7 +304,7 @@ export default function SiteHomePage() {
         }
       } catch (error) {
         console.error('Error fetching site config:', error);
-        // Set default config if API fails
+        // Define config padrão se API falhar
         setConfig({
           company_name: 'Sys Passo',
           hero_title: 'Gestão Inteligente de Frotas',
@@ -321,7 +321,7 @@ export default function SiteHomePage() {
     fetchConfig();
   }, []);
 
-  // Fetch vehicle and conductor counts
+  // Busca contagens
   useEffect(() => {
     const fetchCounts = async () => {
       try {
@@ -360,7 +360,7 @@ export default function SiteHomePage() {
     fetchCounts();
   }, []);
 
-  // Handle scroll for navbar
+  // Gerencia scroll do navbar
   useEffect(() => {
     const handleScroll = () => {
       setIsScrolled(window.scrollY > 20);

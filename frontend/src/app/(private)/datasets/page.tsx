@@ -9,10 +9,10 @@ import { Badge } from "@/components/ui/badge"
 import { useDatasets } from "@/hooks/useDatasets"
 import { useToast } from "@/hooks/use-toast"
 
-// Lazy load dialog component
+// Carrega componente de diálogo sob demanda
 const DatasetDialog = lazy(() => import("@/components/datasets/DatasetDialog"))
 
-const BLANK_TARGET = "_blank"; // Define as a constant
+const BLANK_TARGET = "_blank"; // Define como constante
 
 const openDatasetInNewTab = (datasetId: number) => {
   window.open(`/datasets/${datasetId}`, BLANK_TARGET);
@@ -24,7 +24,7 @@ export default function DatasetsPage() {
   const [searchTerm, setSearchTerm] = useState("")
   const [isDialogOpen, setIsDialogOpen] = useState(false)
 
-  // Filtrar datasets pelo nome
+  // Filtra datasets pelo nome
   const filteredDatasets = datasets.filter((dataset) =>
     dataset.table_name.toLowerCase().includes(searchTerm.toLowerCase())
   )

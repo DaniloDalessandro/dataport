@@ -53,7 +53,7 @@ const data = {
 }
 
 export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
-  // Get user data from localStorage
+  // Obtém dados do usuário do localStorage
   const [user, setUser] = React.useState({
     name: "Usuário",
     email: "user@dataport.com",

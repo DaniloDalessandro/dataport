@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/dialog"
 import { Label } from "@/components/ui/label"
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
+import { Progress } from "@/components/ui/progress"
 import { useToast } from "@/hooks/use-toast"
 
 interface DatasetDialogProps {
@@ -30,6 +31,8 @@ interface DatasetDialogProps {
 export default function DatasetDialog({ isOpen, onClose, onSubmit }: DatasetDialogProps) {
   const { toast } = useToast()
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [uploadProgress, setUploadProgress] = useState(0)
+  const [uploadStatus, setUploadStatus] = useState("")
   const [importType, setImportType] = useState<"endpoint" | "file">("endpoint")
   const [datasetName, setDatasetName] = useState("")
   const [endpoint, setEndpoint] = useState("")
@@ -57,8 +60,23 @@ export default function DatasetDialog({ isOpen, onClose, onSubmit }: DatasetDial
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setIsSubmitting(true)
+    setUploadProgress(0)
+    setUploadStatus("Preparando upload...")
 
     try {
+      // Simula progresso
+      const progressInterval = setInterval(() => {
+        setUploadProgress((prev) => {
+          if (prev >= 90) {
+            clearInterval(progressInterval)
+            return 90
+          }
+          return prev + 10
+        })
+      }, 200)
+
+      setUploadStatus("Enviando arquivo...")
+
       await onSubmit({
         import_type: importType,
         table_name: datasetName,
@@ -66,12 +84,19 @@ export default function DatasetDialog({ isOpen, onClose, onSubmit }: DatasetDial
         file: importType === 'file' ? selectedFile || undefined : undefined,
       })
 
-      // Reset form
+      clearInterval(progressInterval)
+      setUploadProgress(100)
+      setUploadStatus("Upload concluído!")
+
+      await new Promise(resolve => setTimeout(resolve, 500))
+
       handleCancel()
     } catch (error) {
-      // Error is handled by parent
+      setUploadStatus("Erro ao fazer upload")
     } finally {
       setIsSubmitting(false)
+      setUploadProgress(0)
+      setUploadStatus("")
     }
   }
 
@@ -93,6 +118,27 @@ export default function DatasetDialog({ isOpen, onClose, onSubmit }: DatasetDial
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={handleSubmit}>
+          {/* Loading Progress */}
+          {isSubmitting && (
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-6 mb-4 space-y-4">
+              <div className="flex items-center gap-3">
+                <Loader2 className="h-5 w-5 text-blue-600 animate-spin flex-shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-blue-900">{uploadStatus}</p>
+                  <p className="text-xs text-blue-700 mt-1">
+                    Processando dados... Isso pode levar alguns instantes
+                  </p>
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Progress value={uploadProgress} className="h-3" />
+                <p className="text-xs text-blue-600 text-right font-medium">
+                  {uploadProgress}%
+                </p>
+              </div>
+            </div>
+          )}
+
           <div className="grid gap-4 py-4">
             {/* Campo Nome */}
             <div className="grid gap-2">
@@ -107,6 +153,7 @@ export default function DatasetDialog({ isOpen, onClose, onSubmit }: DatasetDial
                 onChange={(e) => setDatasetName(e.target.value.slice(0, 80))}
                 maxLength={80}
                 required
+                disabled={isSubmitting}
               />
               <p className="text-xs text-gray-500">
                 {datasetName.length}/80 caracteres
@@ -119,15 +166,19 @@ export default function DatasetDialog({ isOpen, onClose, onSubmit }: DatasetDial
                 Tipo de Importação
                 <span className="text-red-500 ml-1">*</span>
               </Label>
-              <RadioGroup value={importType} onValueChange={(value) => setImportType(value as "endpoint" | "file")}>
+              <RadioGroup
+                value={importType}
+                onValueChange={(value) => setImportType(value as "endpoint" | "file")}
+                disabled={isSubmitting}
+              >
                 <div className="flex items-center space-x-2">
-                  <RadioGroupItem value="endpoint" id="endpoint-radio" />
+                  <RadioGroupItem value="endpoint" id="endpoint-radio" disabled={isSubmitting} />
                   <Label htmlFor="endpoint-radio" className="font-normal cursor-pointer">
                     Endpoint (URL)
                   </Label>
                 </div>
                 <div className="flex items-center space-x-2">
-                  <RadioGroupItem value="file" id="file-radio" />
+                  <RadioGroupItem value="file" id="file-radio" disabled={isSubmitting} />
                   <Label htmlFor="file-radio" className="font-normal cursor-pointer">
                     Arquivo (Excel/CSV)
                   </Label>
@@ -149,6 +200,7 @@ export default function DatasetDialog({ isOpen, onClose, onSubmit }: DatasetDial
                   value={endpoint}
                   onChange={(e) => setEndpoint(e.target.value)}
                   required={importType === "endpoint"}
+                  disabled={isSubmitting}
                 />
                 <p className="text-xs text-gray-500">
                   URL da API ou fonte de dados
@@ -172,6 +224,7 @@ export default function DatasetDialog({ isOpen, onClose, onSubmit }: DatasetDial
                       onChange={handleFileChange}
                       className="cursor-pointer"
                       required={importType === "file" && !selectedFile}
+                      disabled={isSubmitting}
                     />
                   </div>
                   <p className="text-xs text-gray-500">

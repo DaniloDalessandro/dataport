@@ -56,11 +56,11 @@ export default function DatasetDetailsPage() {
   const loadDataset = useCallback(async () => {
     setIsLoading(true)
     try {
-      // Fetch dataset details usando apiGet que trata autenticação automaticamente
+      // Busca detalhes do dataset usando apiGet que trata autenticação automaticamente
       const data = await apiGet(`/api/data-import/processes/${id}/`) as Dataset
       setDataset(data)
 
-      // Fetch data preview
+      // Busca preview dos dados
       const previewData = await apiGet(`/api/data-import/processes/${id}/preview/`) as {
         data: Record<string, string | number | boolean>[]
       }

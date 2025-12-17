@@ -3,13 +3,17 @@ Alice Chat View - Gemini Integration
 """
 import os
 import json
+import logging
+import time
 from rest_framework import status
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
-from django.db.models import Count, Sum, Q
+from django.db.models import Count, Q
 from .models import DataImportProcess
 import google.generativeai as genai
+
+logger = logging.getLogger(__name__)
 
 
 class AliceChatView(APIView):
@@ -72,21 +76,58 @@ PERGUNTA DO USUÁRIO:
 
 Sua resposta:"""
 
-            # Get response from Gemini
-            response = model.generate_content(system_prompt)
+            # Get response from Gemini with retry logic
+            response_text = self._get_gemini_response_with_retry(model, system_prompt)
 
             return Response({
                 'success': True,
-                'response': response.text
+                'response': response_text
             })
 
         except Exception as e:
             import traceback
-            print(f"Error in Alice chat: {traceback.format_exc()}")
+            error_message = str(e)
+            logger.error(f"Error in Alice chat: {traceback.format_exc()}")
+
+            # Handle rate limit errors with friendly message
+            if '429' in error_message or 'RATE_LIMIT_EXCEEDED' in error_message:
+                return Response({
+                    'success': False,
+                    'error': 'A Alice está processando muitas requisições no momento. Por favor, aguarde alguns segundos e tente novamente.'
+                }, status=status.HTTP_429_TOO_MANY_REQUESTS)
+
+            # Handle quota errors
+            if 'quota' in error_message.lower() or 'limit' in error_message.lower():
+                return Response({
+                    'success': False,
+                    'error': 'Limite de uso da API foi atingido. Por favor, tente novamente em alguns minutos.'
+                }, status=status.HTTP_429_TOO_MANY_REQUESTS)
+
             return Response({
                 'success': False,
-                'error': f'Erro ao processar pergunta: {str(e)}'
+                'error': f'Erro ao processar pergunta. Tente novamente em alguns instantes.'
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    def _get_gemini_response_with_retry(self, model, prompt, max_retries=3):
+        """
+        Get response from Gemini with exponential backoff retry
+        """
+        for attempt in range(max_retries):
+            try:
+                response = model.generate_content(prompt)
+                return response.text
+            except Exception as e:
+                error_message = str(e)
+
+                # If it's a rate limit error and not the last attempt, retry with backoff
+                if ('429' in error_message or 'RATE_LIMIT_EXCEEDED' in error_message) and attempt < max_retries - 1:
+                    wait_time = (2 ** attempt) * 2  # Exponential backoff: 2, 4, 8 seconds
+                    logger.warning(f"Rate limit hit, waiting {wait_time}s before retry {attempt + 1}/{max_retries}")
+                    time.sleep(wait_time)
+                    continue
+
+                # If it's the last attempt or a different error, raise it
+                raise
 
     def _build_dataset_context(self):
         """

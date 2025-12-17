@@ -1,0 +1,19 @@
+# Dockerfile de desenvolvimento para Frontend
+FROM node:20-alpine AS development
+
+WORKDIR /app
+
+# Copiar package files
+COPY package.json package-lock.json* ./
+
+# Instalar dependências (incluindo dev)
+RUN npm ci
+
+# Copiar código
+COPY . .
+
+# Expor porta
+EXPOSE 3000
+
+# Hot reload habilitado
+CMD ["npm", "run", "dev"]

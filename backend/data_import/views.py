@@ -3,22 +3,19 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.pagination import PageNumberPagination
-from django.http import HttpResponse, StreamingHttpResponse
-from django.db.models import Count, Sum, Q
-from django.db.models.functions import TruncMonth
+from django.http import HttpResponse
 from django.utils.decorators import method_decorator
-from django.views.decorators.cache import cache_page
+from django.db.models import Sum, Count
+from django.db.models.functions import TruncMonth
+from datetime import datetime, timedelta
 from django_ratelimit.decorators import ratelimit
-from drf_spectacular.utils import extend_schema, extend_schema_view, OpenApiParameter, OpenApiExample
+from drf_spectacular.utils import extend_schema, OpenApiParameter
 from drf_spectacular.types import OpenApiTypes
 from .models import DataImportProcess
 from .serializers import DataImportRequestSerializer, DataImportProcessSerializer
 from .services import DataImportService
-from .permissions import IsDatasetOwnerOrReadOnly, IsDatasetOwner, CanDeleteDatasets
-from .cache import cache_view_result, invalidate_process_caches
-from datetime import datetime, timedelta
-import csv
-import io
+from .permissions import IsDatasetOwner, CanDeleteDatasets
+from .cache import invalidate_process_caches
 import logging
 import uuid
 
@@ -27,8 +24,8 @@ logger = logging.getLogger(__name__)
 
 def log_error_safely(error: Exception, context: str = "") -> str:
     """
-    Log error details server-side and return a safe error ID for client response.
-    Never exposes internal details to the client.
+    Registra detalhes do erro no servidor e retorna um ID seguro para o cliente.
+    Nunca expõe detalhes internos ao cliente.
     """
     import traceback
     error_id = str(uuid.uuid4())[:8]
@@ -81,61 +78,57 @@ class ImportDataView(APIView):
     """
     View para importar dados de um endpoint externo ou arquivo
     POST /api/data-import/
-    Rate limit: 10 imports per hour per user
 
-    Supports both:
-    - Endpoint URL import (JSON data from API)
-    - File upload import (Excel/CSV files)
+    Suporta:
+    - Importação via URL de endpoint (dados JSON de API)
+    - Upload de arquivo (arquivos Excel/CSV)
     """
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
-        """
-        Import data from external endpoint or uploaded file
-        """
-        print(f"\n{'='*60}")
-        print(f"📥 Nova requisição de importação recebida")
-        print(f"{'='*60}")
-        print(f"Content-Type: {request.content_type}")
-        print(f"FILES: {list(request.FILES.keys())}")
-        print(f"DATA keys: {list(request.data.keys())}")
+        logger.info("="*60)
+        logger.info("[IMPORT] Nova requisicao de importacao recebida")
+        logger.info("="*60)
+        logger.info(f"Content-Type: {request.content_type}")
+        logger.info(f"FILES: {list(request.FILES.keys())}")
+        logger.info(f"DATA keys: {list(request.data.keys())}")
 
-        # Prepare data for serializer (handle both multipart and JSON)
+        # Prepara dados para o serializer
         data = request.data.copy()
 
-        # Get file if present
+        # Obtém arquivo se presente
         file = request.FILES.get('file', None)
         if file:
-            print(f"📁 Arquivo recebido:")
-            print(f"   - Nome: {file.name}")
-            print(f"   - Tamanho: {file.size} bytes")
-            print(f"   - Content-Type: {file.content_type}")
+            logger.info("[FILE] Arquivo recebido:")
+            logger.info(f"   - Nome: {file.name}")
+            logger.info(f"   - Tamanho: {file.size} bytes")
+            logger.info(f"   - Content-Type: {file.content_type}")
             data['file'] = file
 
         serializer = DataImportRequestSerializer(data=data)
 
         if not serializer.is_valid():
-            print(f"❌ Validação falhou: {serializer.errors}")
+            logger.error(f"[ERROR] Validacao falhou: {serializer.errors}")
             return Response(
                 {'error': 'Dados inválidos', 'details': serializer.errors},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        # Extract validated data
+        # Extrai dados validados
         import_type = serializer.validated_data['import_type']
         table_name = serializer.validated_data['table_name']
         endpoint_url = serializer.validated_data.get('endpoint_url')
         uploaded_file = serializer.validated_data.get('file')
 
-        print(f"✅ Dados validados:")
-        print(f"   - Tipo: {import_type}")
-        print(f"   - Tabela: {table_name}")
+        logger.info("[OK] Dados validados:")
+        logger.info(f"   - Tipo: {import_type}")
+        logger.info(f"   - Tabela: {table_name}")
         if import_type == 'file' and uploaded_file:
-            print(f"   - Arquivo: {uploaded_file.name}")
+            logger.info(f"   - Arquivo: {uploaded_file.name}")
 
         try:
-            print(f"\n🔄 Iniciando importação...")
-            # Execute import (works for both endpoint and file)
+            logger.info("[PROCESS] Iniciando importacao...")
+            # Executa importação
             process = DataImportService.import_data(
                 table_name=table_name,
                 user=request.user,
@@ -143,15 +136,15 @@ class ImportDataView(APIView):
                 file=uploaded_file,
                 import_type=import_type
             )
-            print(f"✅ Importação concluída com sucesso!")
+            logger.info("[OK] Importacao concluida com sucesso!")
 
-            # Invalidate related caches
+            # Invalida caches relacionados
             invalidate_process_caches(process.id)
 
-            # Return created process
+            # Retorna processo criado
             result_serializer = DataImportProcessSerializer(process)
 
-            # Get insertion statistics if available
+            # Obtém estatísticas de inserção
             message = f'Dados importados com sucesso! {process.record_count} registros inseridos.'
 
             return Response(
@@ -166,7 +159,7 @@ class ImportDataView(APIView):
         except Exception as e:
             error_id = log_error_safely(e, "Data import failed")
 
-            # Create more user-friendly error messages
+            # Cria mensagens de erro mais amigáveis
             error_message = str(e)
             if 'Erro ao ler arquivo' in error_message:
                 user_message = "Não foi possível ler o arquivo. Verifique se está no formato correto (.xlsx, .xls ou .csv)."
@@ -211,12 +204,11 @@ class ListProcessesView(APIView):
 
     def get(self, request):
         """
-        List all import processes with pagination and optimized queries
+        Lista todos os processos de importação com paginação e queries otimizadas
         """
-        # Use select_related to avoid N+1 queries when accessing created_by
+        # Usa select_related para evitar queries N+1 ao acessar created_by
         processes = DataImportProcess.objects.select_related('created_by').all()
 
-        # Paginação
         paginator = DataImportPagination()
         paginated_processes = paginator.paginate_queryset(processes, request)
 
@@ -234,7 +226,7 @@ class ProcessDetailView(APIView):
 
     def get(self, request, pk):
         """
-        Get details of a specific import process
+        Retorna detalhes de um processo de importação específico
         """
         try:
             process = DataImportProcess.objects.get(pk=pk)
@@ -258,27 +250,21 @@ class DeleteProcessView(APIView):
 
     def delete(self, request, pk):
         """
-        Delete a process and its associated records (using ORM)
+        Deleta um processo e seus registros associados (usando ORM)
         """
         try:
             process = DataImportProcess.objects.get(pk=pk)
 
-            # Check object-level permission
             self.check_object_permissions(request, process)
             table_name = process.table_name
 
-            # Delete all associated records using ORM (CASCADE will handle this automatically)
-            # But we'll do it explicitly for logging
             from .models import ImportedDataRecord
             record_count = ImportedDataRecord.objects.filter(process=process).count()
 
-            # Delete the process record (CASCADE will delete all ImportedDataRecord entries)
             process.delete()
-
-            # Invalidate related caches
             invalidate_process_caches(pk)
 
-            print(f"✅ Processo {table_name} e {record_count} registros deletados com sucesso")
+            logger.info(f"[OK] Processo {table_name} e {record_count} registros deletados com sucesso")
 
             return Response(
                 {
@@ -311,39 +297,38 @@ class AppendDataView(APIView):
 
     def post(self, request, pk):
         """
-        Append more data to an existing table
+        Adiciona mais dados a uma tabela existente
         """
         try:
             process = DataImportProcess.objects.get(pk=pk)
 
-            # Check object-level permission
             self.check_object_permissions(request, process)
 
-            print(f"\n{'='*60}")
-            print(f"📥 Adicionando dados à tabela: {process.table_name}")
-            print(f"{'='*60}")
+            logger.info("="*60)
+            logger.info(f"[APPEND] Adicionando dados a tabela: {process.table_name}")
+            logger.info("="*60)
 
-            # Prepare data for serializer
+            # Prepara dados para o serializer
             data = request.data.copy()
             file = request.FILES.get('file', None)
             if file:
                 data['file'] = file
 
-            # Validate request
+            # Valida requisição
             serializer = DataImportRequestSerializer(data=data)
             if not serializer.is_valid():
-                print(f"❌ Validação falhou: {serializer.errors}")
+                logger.error(f"[ERROR] Validacao falhou: {serializer.errors}")
                 return Response(
                     {'error': 'Dados inválidos', 'details': serializer.errors},
                     status=status.HTTP_400_BAD_REQUEST
                 )
 
-            # Extract validated data
+            # Extrai dados validados
             import_type = serializer.validated_data['import_type']
             endpoint_url = serializer.validated_data.get('endpoint_url')
             uploaded_file = serializer.validated_data.get('file')
 
-            # Fetch new data
+            # Busca novos dados
             if import_type == 'endpoint':
                 if not endpoint_url:
                     raise ValueError('URL do endpoint é obrigatória')
@@ -355,30 +340,27 @@ class AppendDataView(APIView):
             else:
                 raise ValueError(f'Tipo de importação inválido: {import_type}')
 
-            # Insert new data using ORM
             insert_stats = DataImportService.insert_data_orm(
                 process,
                 data,
                 process.column_structure
             )
 
-            # Update process record with newly inserted records only
             process.record_count += insert_stats['inserted']
             process.save()
 
-            # Invalidate related caches
             invalidate_process_caches(pk)
 
-            print(f"✅ Importação concluída:")
-            print(f"   - Inseridos: {insert_stats['inserted']}")
-            print(f"   - Duplicatas ignoradas: {insert_stats['duplicates']}")
-            print(f"   - Erros: {insert_stats['errors']}")
-            print(f"   - Total processado: {insert_stats['total']}")
+            logger.info("[OK] Importacao concluida:")
+            logger.info(f"   - Inseridos: {insert_stats['inserted']}")
+            logger.info(f"   - Duplicatas ignoradas: {insert_stats['duplicates']}")
+            logger.info(f"   - Erros: {insert_stats['errors']}")
+            logger.info(f"   - Total processado: {insert_stats['total']}")
 
-            # Return updated process with statistics
+            # Retorna processo atualizado com estatísticas
             result_serializer = DataImportProcessSerializer(process)
 
-            # Create detailed message
+            # Cria mensagem detalhada
             message_parts = [f"{insert_stats['inserted']} novos registros adicionados"]
             if insert_stats['duplicates'] > 0:
                 message_parts.append(f"{insert_stats['duplicates']} duplicatas ignoradas")
@@ -430,10 +412,10 @@ class ToggleStatusView(APIView):
         try:
             process = DataImportProcess.objects.get(pk=pk)
 
-            # Check permission
+            # Verifica permissão
             self.check_object_permissions(request, process)
 
-            # Toggle status
+            # Alterna status
             if process.status == 'active':
                 process.status = 'inactive'
                 message = f'Processo {process.table_name} marcado como inativo'
@@ -446,7 +428,7 @@ class ToggleStatusView(APIView):
             # Invalidate related caches
             invalidate_process_caches(pk)
 
-            # Return updated process
+            # Retorna processo atualizado
             serializer = DataImportProcessSerializer(process)
 
             return Response(
@@ -485,7 +467,7 @@ class DataPreviewView(APIView):
             process = DataImportProcess.objects.get(pk=pk)
             from .models import ImportedDataRecord
 
-            # Get column names from column_structure
+            # Obtém nomes das colunas
             columns = list(process.column_structure.keys())
 
             if not columns:
@@ -578,7 +560,7 @@ class SearchDataView(APIView):
                         })
 
                 except Exception as e:
-                    print(f"Erro ao buscar no processo {process.table_name}: {e}")
+                    logger.error(f"Erro ao buscar no processo {process.table_name}: {e}")
                     continue
 
             return Response({
@@ -754,7 +736,7 @@ class PublicSearchDataView(APIView):
                         })
 
                 except Exception as e:
-                    print(f"Erro ao buscar no processo {process.table_name}: {e}")
+                    logger.error(f"Erro ao buscar no processo {process.table_name}: {e}")
                     continue
 
             return Response({
@@ -994,7 +976,7 @@ class PublicColumnMetadataView(APIView):
                     if len(unique_values) <= 20 and filter_type == 'string':
                         filter_type = 'category'
                 except Exception as e:
-                    print(f"Error getting unique values for {col_name}: {e}")
+                    logger.error(f"Error getting unique values for {col_name}: {e}")
 
                 columns_metadata.append({
                     'name': col_name,
@@ -1074,7 +1056,10 @@ class DashboardStatsView(APIView):
             storage_tb = storage_gb / 1024
 
             # Get monthly data (last 6 months)
-            six_months_ago = datetime.now() - timedelta(days=180)
+            from dateutil.relativedelta import relativedelta
+            now = datetime.now()
+            six_months_ago = now - relativedelta(months=6)
+
             monthly_data = DataImportProcess.objects.filter(
                 created_at__gte=six_months_ago
             ).annotate(
@@ -1084,26 +1069,36 @@ class DashboardStatsView(APIView):
                 total_records=Sum('record_count')
             ).order_by('month')
 
-            # Format monthly data
+            # Create a dict for quick lookup
+            data_by_month = {}
+            for item in monthly_data:
+                month_key = item['month'].strftime('%Y-%m')
+                volume_gb = ((item['total_records'] or 0) * 1024) / (1024 * 1024 * 1024)  # Assume 1KB per record
+                data_by_month[month_key] = {
+                    'value': round(volume_gb, 2),
+                    'datasets': item['count']
+                }
+
+            # Generate last 6 months with data
             monthly_volume = []
             months = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez']
-            for item in monthly_data:
-                month_num = item['month'].month - 1
-                volume_gb = (item['total_records'] or 0) / 1000  # Convert to GB (simplified)
-                monthly_volume.append({
-                    'month': months[month_num],
-                    'value': int(volume_gb),
-                    'datasets': item['count']
-                })
+            for i in range(6):
+                target_date = now - relativedelta(months=5-i)
+                month_key = target_date.strftime('%Y-%m')
+                month_name = months[target_date.month - 1]
 
-            # If less than 6 months of data, fill with zeros
-            while len(monthly_volume) < 6:
-                month_idx = (datetime.now().month - 6 + len(monthly_volume)) % 12
-                monthly_volume.insert(0, {
-                    'month': months[month_idx],
-                    'value': 0,
-                    'datasets': 0
-                })
+                if month_key in data_by_month:
+                    monthly_volume.append({
+                        'month': month_name,
+                        'value': data_by_month[month_key]['value'],
+                        'datasets': data_by_month[month_key]['datasets']
+                    })
+                else:
+                    monthly_volume.append({
+                        'month': month_name,
+                        'value': 0,
+                        'datasets': 0
+                    })
 
             # Calculate growth rate (comparing last month to previous month)
             growth_rate = 0

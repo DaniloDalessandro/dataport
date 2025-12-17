@@ -286,13 +286,14 @@ export default function DashboardPage() {
       </div>
 
       {/* Main Charts */}
-      <div className="grid gap-8 lg:grid-cols-2">
+      <div className="grid gap-8">
         <ChartCard
           title="Volume de Dados Mensal"
           description="Evolução do volume de dados armazenados ao longo dos meses (em GB)"
           chartKey="monthlyVolume"
           chartStates={chartStates}
           onToggleFullscreen={toggleFullscreen}
+          height={400}
         >
           <AreaChart data={monthly_volume}>
             <defs>
@@ -337,75 +338,7 @@ export default function DashboardPage() {
             />
           </AreaChart>
         </ChartCard>
-
-        <ChartCard
-          title="Distribuição por Status"
-          description="Proporção de datasets categorizados por seu status atual"
-          chartKey="datasetStatus"
-          chartStates={chartStates}
-          onToggleFullscreen={toggleFullscreen}
-        >
-          <PieChart>
-            <Pie
-              data={dataset_status}
-              cx="50%"
-              cy="50%"
-              labelLine={{
-                stroke: '#9ca3af',
-                strokeWidth: 2
-              }}
-              label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
-              outerRadius={120}
-              fill="#8884d8"
-              dataKey="value"
-              stroke="#fff"
-              strokeWidth={2}
-            >
-              {dataset_status.map((entry, index) => (
-                <Cell key={`cell-${index}`} fill={entry.color} />
-              ))}
-            </Pie>
-            <Tooltip
-              contentStyle={{
-                backgroundColor: 'white',
-                border: '1px solid #e5e7eb',
-                borderRadius: '12px',
-                fontSize: '14px',
-                padding: '12px 16px',
-                boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)'
-              }}
-              formatter={(value: number, name: string) => [`${value} datasets`, name]}
-            />
-          </PieChart>
-        </ChartCard>
       </div>
-
-      {/* Additional Info Card */}
-      <Card className="border-gray-200 hover:shadow-lg transition-all duration-300 bg-gradient-to-br from-gray-50 to-white">
-        <CardHeader>
-          <CardTitle className="text-xl font-semibold text-gray-900">Resumo Rápido</CardTitle>
-          <CardDescription className="text-base">Principais indicadores do sistema</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="grid md:grid-cols-3 gap-6">
-            <div className="text-center p-6 bg-white rounded-lg border border-gray-100">
-              <p className="text-sm font-medium text-gray-600 mb-2">Taxa de Crescimento</p>
-              <p className="text-3xl font-bold text-green-600">+{metrics.growth_rate}%</p>
-              <p className="text-xs text-gray-500 mt-2">nos últimos 30 dias</p>
-            </div>
-            <div className="text-center p-6 bg-white rounded-lg border border-gray-100">
-              <p className="text-sm font-medium text-gray-600 mb-2">Média de Volume</p>
-              <p className="text-3xl font-bold text-blue-600">{summary.avg_monthly_volume.toFixed(0)}K GB</p>
-              <p className="text-xs text-gray-500 mt-2">por mês</p>
-            </div>
-            <div className="text-center p-6 bg-white rounded-lg border border-gray-100">
-              <p className="text-sm font-medium text-gray-600 mb-2">Total de Datasets</p>
-              <p className="text-3xl font-bold text-purple-600">{metrics.total_datasets}</p>
-              <p className="text-xs text-gray-500 mt-2">{metrics.active_datasets} ativos, {metrics.total_datasets - metrics.active_datasets} inativos</p>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
     </div>
   )
 }

@@ -1,7 +1,6 @@
 import logging
 import requests
 import re
-import time
 import warnings
 import pandas as pd
 from datetime import datetime
@@ -155,8 +154,8 @@ class DataImportService:
         except Exception as e:
             import traceback
             error_details = traceback.format_exc()
-            print(f'Erro detalhado ao ler arquivo {file_name}:')
-            print(error_details)
+            logger.error(f'Erro detalhado ao ler arquivo {file_name}:')
+            logger.error(error_details)
             raise Exception(f'Erro ao ler arquivo {file_name}: {str(e)}')
 
     @staticmethod
@@ -302,7 +301,7 @@ class DataImportService:
 
                 except requests.exceptions.SSLError as e:
                     # If SSL fails, try without verification
-                    print(f"SSL verification failed, trying without verification: {e}")
+                    logger.warning(f"SSL verification failed, trying without verification: {e}")
                     response = requests.get(
                         url,
                         headers=headers,
@@ -413,13 +412,31 @@ class DataImportService:
         from .models import ImportedDataRecord
 
         if not data:
+            logger.warning(f"insert_data_orm: data is empty!")
             return {'inserted': 0, 'duplicates': 0, 'errors': 0, 'total': 0}
+
+        logger.info(f"[DEBUG] Starting insert_data_orm with {len(data)} records")
 
         # Map original names to sanitized names
         name_mapping = {
             info['original_name']: col_name
             for col_name, info in column_structure.items()
         }
+
+        logger.info(f"[DEBUG] Name mapping created with {len(name_mapping)} entries")
+        logger.info(f"[DEBUG] First 3 mappings: {dict(list(name_mapping.items())[:3])}")
+
+        # Log first record to see what column names we're receiving
+        if data:
+            first_record_keys = list(data[0].keys())
+            logger.info(f"[DEBUG] First record has columns: {first_record_keys[:5]}...")
+
+            # Check if any keys from first record match the mapping
+            matched_keys = [k for k in first_record_keys if k in name_mapping]
+            unmatched_keys = [k for k in first_record_keys if k not in name_mapping]
+            logger.info(f"[DEBUG] Matched keys: {len(matched_keys)}, Unmatched keys: {len(unmatched_keys)}")
+            if unmatched_keys:
+                logger.warning(f"[DEBUG] Unmatched keys: {unmatched_keys[:5]}")
 
         # Get existing hashes to detect duplicates
         existing_hashes = set(
@@ -430,10 +447,12 @@ class DataImportService:
         records_to_create = []
         duplicates_skipped = 0
         errors = 0
+        empty_normalized_data_count = 0
 
-        for item in data:
+        for idx, item in enumerate(data):
             if not isinstance(item, dict):
                 errors += 1
+                logger.warning(f"[DEBUG] Record {idx} is not a dict, skipping")
                 continue
 
             # Create normalized data dict with sanitized column names
@@ -445,6 +464,12 @@ class DataImportService:
 
             if not normalized_data:
                 errors += 1
+                empty_normalized_data_count += 1
+                if empty_normalized_data_count == 1:
+                    # Log first occurrence with details
+                    logger.error(f"[DEBUG] Record {idx} resulted in empty normalized_data!")
+                    logger.error(f"[DEBUG] Original keys: {list(item.keys())[:5]}")
+                    logger.error(f"[DEBUG] Available mappings: {list(name_mapping.keys())[:5]}")
                 continue
 
             try:
@@ -475,6 +500,9 @@ class DataImportService:
 
         # Bulk insert all records at once (1000 per batch)
         records_inserted = 0
+        logger.info(f"[DEBUG] Prepared {len(records_to_create)} records for insertion")
+        logger.info(f"[DEBUG] Errors so far: {errors}, Duplicates: {duplicates_skipped}")
+
         if records_to_create:
             try:
                 BATCH_SIZE = 1000
@@ -485,14 +513,22 @@ class DataImportService:
                         ignore_conflicts=True  # Ignore any duplicate key errors
                     )
                     records_inserted += len(batch)
-                    logger.info(f"Inserted batch {i // BATCH_SIZE + 1}: {len(batch)} records")
+                    logger.info(f"[OK] Inserted batch {i // BATCH_SIZE + 1}: {len(batch)} records")
 
             except Exception as e:
-                logger.error(f'Bulk insert failed: {e}')
+                logger.error(f'[ERROR] Bulk insert failed: {e}')
+                import traceback
+                logger.error(traceback.format_exc())
                 errors += len(records_to_create)
                 records_inserted = 0
+        else:
+            logger.warning(f"[WARNING] No records to insert! All {len(data)} records resulted in errors or empty normalized data")
+            if empty_normalized_data_count > 0:
+                logger.warning(f"[WARNING] {empty_normalized_data_count} records had empty normalized_data (column name mismatch)")
 
         total = records_inserted + duplicates_skipped + errors
+
+        logger.info(f"[STATS] FINAL: Inserted={records_inserted}, Duplicates={duplicates_skipped}, Errors={errors}, Total={total}")
 
         return {
             'inserted': records_inserted,
@@ -577,7 +613,7 @@ class DataImportService:
 
             # Store stats in process for later reference
             if insert_stats['duplicates'] > 0 or insert_stats['errors'] > 0:
-                print(f"Import completed: {insert_stats['inserted']} inserted, {insert_stats['duplicates']} duplicates skipped, {insert_stats['errors']} errors")
+                logger.info(f"Import completed: {insert_stats['inserted']} inserted, {insert_stats['duplicates']} duplicates skipped, {insert_stats['errors']} errors")
 
             return process
 

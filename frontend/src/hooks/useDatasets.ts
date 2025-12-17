@@ -62,7 +62,7 @@ export function useDatasets() {
         formData.append('file', data.file)
       }
 
-      // Não definir Content-Type - o browser define automaticamente para multipart/form-data
+      // Não define Content-Type - o browser define automaticamente para multipart/form-data
       const token = localStorage.getItem('access_token')
       const headers: HeadersInit = {}
 
@@ -83,7 +83,6 @@ export function useDatasets() {
 
         try {
           const errorJson = JSON.parse(errorText)
-          // Priorizar mensagem específica de validação antes da mensagem genérica
           errorMessage = errorJson.details?.table_name?.[0] ||
                         errorJson.details?.endpoint_url?.[0] ||
                         errorJson.details?.file?.[0] ||
@@ -91,7 +90,6 @@ export function useDatasets() {
                         errorJson.detail ||
                         errorMessage
         } catch {
-          // Se não for JSON, usar a mensagem padrão
           console.error('Error response:', errorText)
         }
 
@@ -143,22 +141,21 @@ export function useDatasets() {
 
   return {
     datasets,
-    vehicles: datasets, // Alias for backward compatibility
+    vehicles: datasets,
     isLoading,
-    loading: isLoading, // Alias for backward compatibility
+    loading: isLoading,
     error,
     fetchDatasets,
     createDataset,
     updateDataset,
     deleteDataset,
     getDataset,
-    getVehicle: getDataset, // Alias for backward compatibility
+    getVehicle: getDataset,
   }
 }
 
 export default useDatasets
 
-// Re-export types for backward compatibility
 export type Vehicle = Dataset
 export type VehicleFormData = DatasetFormData
 export const useVehicles = useDatasets

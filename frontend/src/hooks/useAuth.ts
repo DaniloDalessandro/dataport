@@ -20,8 +20,8 @@ interface UseAuthReturn {
 }
 
 /**
- * Custom hook for managing authentication state
- * Provides user data, authentication status, and auth-related functions
+ * Hook customizado para gerenciar estado de autenticação
+ * Fornece dados do usuário, status de autenticação e funções relacionadas
  */
 export function useAuth(): UseAuthReturn {
   const router = useRouter()
@@ -46,7 +46,7 @@ export function useAuth(): UseAuthReturn {
 
     checkAuth()
 
-    // Re-check on storage change (for multi-tab sync)
+    // Revalida ao mudar storage (sincronização multi-aba)
     const handleStorageChange = (e: StorageEvent) => {
       if (
         e.key === "access_token" ||
@@ -91,8 +91,8 @@ export function useAuth(): UseAuthReturn {
 }
 
 /**
- * Hook that redirects to login if user is not authenticated
- * Use this in pages that require authentication
+ * Hook que redireciona para login se o usuário não estiver autenticado
+ * Use em páginas que requerem autenticação
  */
 export function useRequireAuth(): UseAuthReturn {
   const router = useRouter()
@@ -108,8 +108,8 @@ export function useRequireAuth(): UseAuthReturn {
 }
 
 /**
- * Hook that redirects to dashboard if user is already authenticated
- * Use this in login/signup pages
+ * Hook que redireciona para dashboard se o usuário já estiver autenticado
+ * Use em páginas de login/cadastro
  */
 export function useRedirectIfAuthenticated(redirectTo: string = "/dashboard") {
   const router = useRouter()

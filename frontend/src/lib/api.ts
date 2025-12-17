@@ -32,7 +32,7 @@ export async function apiRequest(
 ): Promise<Response> {
   const url = `${API_BASE_URL}${endpoint}`
 
-  // Check if token needs refresh before making request
+  // Verifica se token precisa ser atualizado antes de fazer a requisição
   const token = getAccessToken()
   if (token && isTokenExpired(token, 1)) {
     console.log("[API] Token is expired or expiring soon, refreshing...")
@@ -55,14 +55,13 @@ export async function apiRequest(
 
   let response = await fetch(url, config)
 
-  // If we get 401, try to refresh token and retry once
+  // Se receber 401, tenta atualizar token e retentar uma vez
   if (response.status === 401) {
     console.log("[API] Received 401, attempting token refresh...")
     const newToken = await refreshAccessToken()
 
     if (newToken) {
       console.log("[API] Token refreshed successfully, retrying request...")
-      // Retry request with new token
       const retryConfig: RequestInit = {
         ...options,
         headers: {

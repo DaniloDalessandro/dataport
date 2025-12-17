@@ -1,0 +1,198 @@
+version: '3.9'
+
+services:
+  # Banco de dados PostgreSQL
+  postgres:
+    image: postgres:16-alpine
+    container_name: dataport-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-dataport}
+      POSTGRES_USER: ${POSTGRES_USER:-dataport}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-dataport123}
+      PGDATA: /var/lib/postgresql/data/pgdata
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-dataport}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - dataport-network
+
+  # Redis para cache e Celery
+  redis:
+    image: redis:7-alpine
+    container_name: dataport-redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:-redis123}
+    volumes:
+      - redis_data:/data
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "--raw", "incr", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - dataport-network
+
+  # Backend Django
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: dataport-backend
+    restart: unless-stopped
+    env_file:
+      - ./backend/.env
+    environment:
+      - DEBUG=False
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-dataport}:${POSTGRES_PASSWORD:-dataport123}@postgres:5432/${POSTGRES_DB:-dataport}
+      - REDIS_URL=redis://:${REDIS_PASSWORD:-redis123}@redis:6379/0
+      - CELERY_BROKER_URL=redis://:${REDIS_PASSWORD:-redis123}@redis:6379/1
+      - ALLOWED_HOSTS=localhost,127.0.0.1,backend
+      - CORS_ALLOWED_ORIGINS=http://localhost:3000,http://frontend:3000
+    volumes:
+      - ./backend:/app
+      - backend_logs:/app/logs
+      - backend_static:/app/staticfiles
+      - backend_media:/app/media
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: >
+      sh -c "
+        python manage.py migrate --noinput &&
+        python manage.py collectstatic --noinput &&
+        gunicorn --bind 0.0.0.0:8000 --workers 4 --timeout 120 --access-logfile - --error-logfile - core.wsgi:application
+      "
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - dataport-network
+
+  # Celery Worker
+  celery-worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: dataport-celery-worker
+    restart: unless-stopped
+    env_file:
+      - ./backend/.env
+    environment:
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-dataport}:${POSTGRES_PASSWORD:-dataport123}@postgres:5432/${POSTGRES_DB:-dataport}
+      - REDIS_URL=redis://:${REDIS_PASSWORD:-redis123}@redis:6379/0
+      - CELERY_BROKER_URL=redis://:${REDIS_PASSWORD:-redis123}@redis:6379/1
+    volumes:
+      - ./backend:/app
+      - backend_logs:/app/logs
+    depends_on:
+      - postgres
+      - redis
+      - backend
+    command: celery -A core worker -l info --max-tasks-per-child=1000
+    networks:
+      - dataport-network
+
+  # Celery Beat (tarefas agendadas)
+  celery-beat:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: dataport-celery-beat
+    restart: unless-stopped
+    env_file:
+      - ./backend/.env
+    environment:
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-dataport}:${POSTGRES_USER:-dataport123}@postgres:5432/${POSTGRES_DB:-dataport}
+      - REDIS_URL=redis://:${REDIS_PASSWORD:-redis123}@redis:6379/0
+      - CELERY_BROKER_URL=redis://:${REDIS_PASSWORD:-redis123}@redis:6379/1
+    volumes:
+      - ./backend:/app
+    depends_on:
+      - postgres
+      - redis
+      - backend
+    command: celery -A core beat -l info
+    networks:
+      - dataport-network
+
+  # Frontend Next.js
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: dataport-frontend
+    restart: unless-stopped
+    environment:
+      - NEXT_PUBLIC_API_URL=http://localhost:8000
+      - NODE_ENV=production
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+      - /app/.next
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - dataport-network
+
+  # Nginx (opcional - proxy reverso)
+  nginx:
+    image: nginx:alpine
+    container_name: dataport-nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/conf.d:/etc/nginx/conf.d:ro
+      - backend_static:/var/www/static:ro
+      - backend_media:/var/www/media:ro
+      - nginx_logs:/var/log/nginx
+    depends_on:
+      - backend
+      - frontend
+    networks:
+      - dataport-network
+
+networks:
+  dataport-network:
+    driver: bridge
+    name: dataport-network
+
+volumes:
+  postgres_data:
+    name: dataport-postgres-data
+  redis_data:
+    name: dataport-redis-data
+  backend_logs:
+    name: dataport-backend-logs
+  backend_static:
+    name: dataport-backend-static
+  backend_media:
+    name: dataport-backend-media
+  nginx_logs:
+    name: dataport-nginx-logs

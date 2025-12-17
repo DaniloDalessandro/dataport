@@ -5,7 +5,6 @@ from .views import (
     PublicSearchDataView, PublicDownloadDataView, PublicListDatasetsView, PublicDataPreviewView,
     PublicColumnMetadataView, DashboardStatsView, ReanalyzeColumnTypesView, TaskStatusView
 )
-from .views_alice import AliceChatView
 
 app_name = 'data_import'
 
@@ -23,8 +22,6 @@ urlpatterns = [
     path('processes/<int:pk>/reanalyze-types/', ReanalyzeColumnTypesView.as_view(), name='reanalyze-types'),
     # Async task status
     path('tasks/<str:task_id>/status/', TaskStatusView.as_view(), name='task-status'),
-    # Alice AI Assistant
-    path('alice/chat/', AliceChatView.as_view(), name='alice-chat'),
     # Public endpoints (no authentication required)
     path('public-datasets/', PublicListDatasetsView.as_view(), name='public-list-datasets'),
     path('public-search/', PublicSearchDataView.as_view(), name='public-search-data'),
